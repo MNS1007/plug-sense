@@ -69,7 +69,7 @@ def collect_spot(arm, cams, mic, spot: int, hover, seat, home, a, rng) -> dict:
     folder = ROOT / "collect" / f"{time.strftime('%Y%m%d-%H%M%S')}-spot{spot:02d}"
     (folder / "img").mkdir(parents=True, exist_ok=True)
     line = seat - hover
-    pull_out(arm, hover, seat, a.lead)
+    pull_out(arm, hover, seat, a.pull_lead)
 
     rows = []
     for i, (off, t) in enumerate(sample_offsets(n, a.lateral, rng)):
@@ -99,7 +99,7 @@ def collect_spot(arm, cams, mic, spot: int, hover, seat, home, a, rng) -> dict:
         cams["front"].save(folder / f"{name}_front_after.jpg")
         save_push(folder / "pushes" / name, r, {"spot": spot, "offset": None if offset is None else offset.tolist(),
                                               "hover": hover.tolist(), "seat": seat.tolist(), "lead": a.lead}, mic)
-        pull_out(arm, hover, seat, a.lead)
+        pull_out(arm, hover, seat, a.pull_lead)
         time.sleep(a.dark_wait if outcome == "seated" else 0.2)
         return outcome
 
@@ -133,6 +133,7 @@ def main():
     ap.add_argument("--lateral", type=float, default=24.0, help="largest sideways offset, in encoder counts (about 8 mm)")
     ap.add_argument("--speed", type=float, default=400.0)
     ap.add_argument("--push", type=float, default=12.0, help="push strength in degrees, as in plugsense.gate")
+    ap.add_argument("--pull", type=float, default=20.0)
     ap.add_argument("--near", type=float, default=45.0)
     ap.add_argument("--dark-wait", type=float, default=11.0, help="seconds to wait after a seated push so the display goes dark")
     ap.add_argument("--grasp", type=int, default=1, help="raise by one every time you re-grip the plug")
@@ -174,6 +175,7 @@ def main():
             hover, seat, a.lead = teach(robot, leader, arm, a.near, a.push)
             if hover is None:
                 continue
+            a.pull_lead = a.lead * a.pull / a.push
             input("Let go of the leader arm. Press Enter and the follower works alone.")
             meta = collect_spot(arm, cams, mic, spot, hover, seat, home, a, rng)
             done.append(spot)

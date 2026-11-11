@@ -172,7 +172,8 @@ class Arm:
                 self.sync_goal()
                 self.goto(hover + side + to * line, speed=250.0, settle=0.2)
                 return True
-            g = max(g - (f0 - to) / (seconds * HZ), to, f - lead_max)
+            # the command may run lead_max past the arm, however far that is: this sets the pulling force
+            g = max(g - lead_max / (seconds * HZ), f - lead_max)
             cmd = hover + side + g * line
             if rock and f - g >= 0.9 * lead_max:
                 ph = 2 * math.pi * rock_hz * (now - t_start)

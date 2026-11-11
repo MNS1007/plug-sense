@@ -78,7 +78,7 @@ def teach(robot, leader, arm, near: float, push_deg: float):
 
 def pull_out(arm, hover, seat, lead: float = 0.3) -> None:
     """Pull the plug out; if it stays stuck, wait for a hand and carry on from above the port."""
-    if arm.retract(hover, seat, lead_max=max(0.4, 1.3 * lead)):
+    if arm.retract(hover, seat, lead_max=lead):
         return
     input("  The arm could not pull the plug out. Free it by hand, then press Enter.")
     arm.sync_goal()
@@ -112,6 +112,7 @@ def main():
     ap.add_argument("--probe", action="store_true", help="also run G5: pushes from known offsets")
     ap.add_argument("--wiggle", type=float, default=3.0, help="wiggle size in encoder counts for the wiggle runs")
     ap.add_argument("--push", type=float, default=12.0, help="push strength: how many degrees the command may run ahead of the arm on the busiest joint")
+    ap.add_argument("--pull", type=float, default=20.0, help="pull-out strength, in degrees, like --push")
     ap.add_argument("--near", type=float, default=45.0, help="hover is taken where the busiest joint (wrist twist excluded) was this many counts from the seat, roughly 8 mm")
     ap.add_argument("--spot", default="", help="grid spot number, saved with every push")
     ap.add_argument("--out", default=str(Path(__file__).resolve().parent.parent / "data" / "pushes"))
@@ -131,12 +132,13 @@ def main():
         hover, seat, a.lead = teach(robot, leader, arm, a.near, a.push)
         if hover is None:
             return
+        a.pull_lead = a.lead * a.pull / a.push
         session.mkdir(parents=True, exist_ok=True)
         (session / "teach.json").write_text(json.dumps(
             {"motors": ARM, "hover": hover.tolist(), "seat": seat.tolist(), "spot": a.spot}, indent=2))
 
         input("\nLet go of the leader arm. The follower now moves by itself. Press Enter to start.")
-        pull_out(arm, hover, seat, a.lead)
+        pull_out(arm, hover, seat, a.pull_lead)
 
         def push(name: str, offset=None, wiggle=0.0) -> str:
             arm.approach(hover + (0 if offset is None else offset), seat + (0 if offset is None else offset))
@@ -146,7 +148,7 @@ def main():
             outcome = r["outcome"]
             print(f"  {name:<22} {outcome:<7} depth {r['frac']:.2f}  {r['seconds']:.1f} s")
             save_push(session / name, r, meta, mic)
-            pull_out(arm, hover, seat, a.lead)
+            pull_out(arm, hover, seat, a.pull_lead)
             return outcome
 
         print(f"\nG4: {a.replays} replays from the taught pose")
