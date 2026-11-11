@@ -22,6 +22,8 @@ import time
 import wave
 from pathlib import Path
 
+import logging
+
 import numpy as np
 
 from lerobot.robots.so_follower import SO101Follower, SO101FollowerConfig
@@ -29,6 +31,8 @@ from lerobot.teleoperators.so_leader import SO101Leader, SO101LeaderConfig
 
 from plugsense.arm import ARM, ELBOW, PAN, Arm
 from plugsense.attempt_log import FOLLOWER_PORT, LEADER_PORT, RATE, Mic
+
+logging.getLogger("lerobot.robots.utils").setLevel(logging.ERROR)  # hide the per-step clamp warnings during teleop
 
 STEPS = [1, 2, 4, 6]
 
@@ -43,9 +47,9 @@ def teleop_until_enter(robot, leader, prompt: str) -> None:
         time.sleep(max(0.0, 1 / 30 - (time.monotonic() - t0)))
 
 
-def pull_out(arm, hover, seat) -> None:
+def pull_out(arm, hover, seat, lead: float = 0.3) -> None:
     """Pull the plug out; if it stays stuck, wait for a hand and carry on from above the port."""
-    if arm.retract(hover, seat):
+    if arm.retract(hover, seat, lead_max=max(0.4, 1.3 * lead)):
         return
     input("  The arm could not pull the plug out. Free it by hand, then press Enter.")
     arm.sync_goal()
@@ -78,10 +82,10 @@ def main():
     ap.add_argument("--replays", type=int, default=20)
     ap.add_argument("--probe", action="store_true", help="also run G5: pushes from known offsets")
     ap.add_argument("--wiggle", type=float, default=3.0, help="wiggle size in encoder counts for the wiggle runs")
-    ap.add_argument("--lead", type=float, default=0.30, help="push cap, as a fraction of the hover-to-seat distance")
+    ap.add_argument("--lead", type=float, default=1.0, help="push strength: how far the command may run ahead of the arm, as a fraction of the hover-to-seat distance")
     ap.add_argument("--spot", default="", help="grid spot number, saved with every push")
     ap.add_argument("--out", default=str(Path(__file__).resolve().parent.parent / "data" / "pushes"))
-    ap.add_argument("--rock", type=float, default=20.0, help="wrist rocking size for pull-outs, in encoder counts")
+    ap.add_argument("--rock", type=float, default=40.0, help="wrist rocking size for pull-outs, in encoder counts")
     a = ap.parse_args()
 
     robot = SO101Follower(SO101FollowerConfig(port=FOLLOWER_PORT, id="follower", max_relative_target=10.0))
@@ -100,6 +104,11 @@ def main():
         seat = arm.pos()
         line = seat - hover
         print("hover -> seat, counts per joint:", dict(zip(ARM, line.astype(int))))
+        if abs(line[4]) > 30:
+            print(f"NOTE: the wrist twisted {abs(line[4]) * 0.088:.0f} degrees between hover and seat. "
+                  "Teach hover with the same twist as the seated pose if you can.")
+        if np.abs(line).max() > 90:
+            print("NOTE: hover looks far from the seat. About 10 mm above the port is enough.")
         if np.abs(line).max() < 8:
             print("These two poses are almost the same. Start again with a clearer hover.")
             return
@@ -108,7 +117,7 @@ def main():
             {"motors": ARM, "hover": hover.tolist(), "seat": seat.tolist(), "spot": a.spot}, indent=2))
 
         input("\nLet go of the leader arm. The follower now moves by itself. Press Enter to start.")
-        pull_out(arm, hover, seat)
+        pull_out(arm, hover, seat, a.lead)
 
         def push(name: str, offset=None, wiggle=0.0) -> str:
             arm.approach(hover + (0 if offset is None else offset), seat + (0 if offset is None else offset))
@@ -118,7 +127,7 @@ def main():
             outcome = r["outcome"]
             print(f"  {name:<22} {outcome:<7} depth {r['frac']:.2f}  {r['seconds']:.1f} s")
             save_push(session / name, r, meta, mic)
-            pull_out(arm, hover, seat)
+            pull_out(arm, hover, seat, a.lead)
             return outcome
 
         print(f"\nG4: {a.replays} replays from the taught pose")

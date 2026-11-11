@@ -29,6 +29,8 @@ import time
 import wave
 from pathlib import Path
 
+import logging
+
 import numpy as np
 
 from lerobot.robots.so_follower import SO101Follower, SO101FollowerConfig
@@ -40,6 +42,7 @@ REGISTERS = ["Present_Position", "Present_Load", "Present_Current"]
 LABELS = {"s": "seated", "j": "jammed", "m": "missed", "f": "free"}
 SIDES = {"l": "left", "r": "right", "u": "up", "d": "down"}
 RATE = 16000
+logging.getLogger("lerobot.robots.utils").setLevel(logging.ERROR)  # hide the per-step clamp warnings during teleop
 
 
 class Mic:

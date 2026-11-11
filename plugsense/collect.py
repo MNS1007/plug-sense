@@ -69,7 +69,7 @@ def collect_spot(arm, cams, mic, spot: int, hover, seat, home, a, rng) -> dict:
     folder = ROOT / "collect" / f"{time.strftime('%Y%m%d-%H%M%S')}-spot{spot:02d}"
     (folder / "img").mkdir(parents=True, exist_ok=True)
     line = seat - hover
-    pull_out(arm, hover, seat)
+    pull_out(arm, hover, seat, a.lead)
 
     rows = []
     for i, (off, t) in enumerate(sample_offsets(n, a.lateral, rng)):
@@ -99,7 +99,7 @@ def collect_spot(arm, cams, mic, spot: int, hover, seat, home, a, rng) -> dict:
         cams["front"].save(folder / f"{name}_front_after.jpg")
         save_push(folder / "pushes" / name, r, {"spot": spot, "offset": None if offset is None else offset.tolist(),
                                               "hover": hover.tolist(), "seat": seat.tolist(), "lead": a.lead}, mic)
-        pull_out(arm, hover, seat)
+        pull_out(arm, hover, seat, a.lead)
         time.sleep(a.dark_wait if outcome == "seated" else 0.2)
         return outcome
 
@@ -132,11 +132,11 @@ def main():
     ap.add_argument("--pushes", type=int, default=6)
     ap.add_argument("--lateral", type=float, default=24.0, help="largest sideways offset, in encoder counts (about 8 mm)")
     ap.add_argument("--speed", type=float, default=400.0)
-    ap.add_argument("--lead", type=float, default=0.30)
+    ap.add_argument("--lead", type=float, default=1.0)
     ap.add_argument("--dark-wait", type=float, default=11.0, help="seconds to wait after a seated push so the display goes dark")
     ap.add_argument("--grasp", type=int, default=1, help="raise by one every time you re-grip the plug")
     ap.add_argument("--seed", type=int, default=None)
-    ap.add_argument("--rock", type=float, default=20.0, help="wrist rocking size for pull-outs, in encoder counts")
+    ap.add_argument("--rock", type=float, default=40.0, help="wrist rocking size for pull-outs, in encoder counts")
     a = ap.parse_args()
     rng = np.random.default_rng(a.seed)
 

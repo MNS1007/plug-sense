@@ -28,7 +28,7 @@ def decode_load(v: float) -> float:
 
 
 class Arm:
-    rock = 20.0  # wrist rocking size for pull-outs, in encoder counts (about 1.8 degrees)
+    rock = 40.0  # wrist rocking size for pull-outs, in encoder counts (about 3.5 degrees)
 
     def __init__(self, bus, limits: dict[str, tuple[int, int]] | None = None):
         self.bus = bus
@@ -85,7 +85,7 @@ class Arm:
         offset: np.ndarray | None = None,
         seconds: float = 1.5,
         lead_max: float = 0.30,
-        overshoot: float = 0.30,
+        overshoot: float | None = None,
         seated_at: float = 0.85,
         wiggle: float = 0.0,
         wiggle_hz: float = 3.0,
@@ -104,6 +104,7 @@ class Arm:
         offset shifts the whole line (counts per joint), for probing from a known error.
         wiggle (counts) adds a small circle on pan and elbow once the arm meets resistance.
         """
+        overshoot = lead_max if overshoot is None else overshoot  # same push at the seat as anywhere else
         hover, seat = np.asarray(hover, float), np.asarray(seat, float)
         off = np.zeros(len(ARM)) if offset is None else np.asarray(offset, float)
         line = seat - hover
