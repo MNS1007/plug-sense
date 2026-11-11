@@ -39,7 +39,7 @@ STEPS = [1, 2, 4, 6]
 
 
 def record_commands(robot, leader, arm, prompt: str, max_seconds: float = 25.0) -> list:
-    """Teleop until Enter and return what you commanded, as (seconds, goal) pairs, without the still part at the start."""
+    """Teleop until Enter. Returns (seconds, commanded goal, measured pose) per step, without the still part at the start."""
     print(prompt)
     done = threading.Event()
     threading.Thread(target=lambda: (sys.stdin.readline(), done.set()), daemon=True).start()
@@ -47,11 +47,11 @@ def record_commands(robot, leader, arm, prompt: str, max_seconds: float = 25.0) 
     while not done.is_set():
         t0 = time.monotonic()
         robot.send_action(leader.get_action())
-        demo.append((t0 - t_start, arm.commanded()))
+        demo.append((t0 - t_start, arm.commanded(), arm.pos()))
         time.sleep(max(0.0, 1 / 30 - (time.monotonic() - t0)))
-    moving = next((i for i, (_, q) in enumerate(demo) if np.abs(q - demo[0][1]).max() > 3), 0)
+    moving = next((i for i, d in enumerate(demo) if np.abs(d[1] - demo[0][1]).max() > 3), 0)
     demo = demo[max(0, moving - 3):]
-    return [(t - demo[0][0], q) for t, q in demo if t - demo[0][0] <= max_seconds]
+    return [(t - demo[0][0], q, p) for t, q, p in demo if t - demo[0][0] <= max_seconds]
 
 
 def teleop_until_enter(robot, leader, prompt: str, arm=None) -> list:
@@ -92,9 +92,15 @@ def teach(robot, leader, arm, near: float, push_deg: float):
     print("hover -> seat, counts per joint:", {m: int(v) for m, v in zip(ARM, line)})
     demo = record_commands(robot, leader, arm, "Now PULL THE PLUG OUT by teleop, the way that works for you. "
                                                "Press Enter once it is out and above the port.")
-    if not is_out(arm, hover, seat):
-        print("The plug does not look out yet (the arm is still near the seated pose). The pull-out demo may not work.")
-    print(f"pull-out demo: {demo[-1][0]:.1f} s, {len(demo)} steps")
+    def depth(p):
+        return float((p - hover)[:4] @ line[:4] / (line[:4] @ line[:4]))
+
+    out = next((i for i, d in enumerate(demo) if depth(d[2]) <= -0.2), None)
+    if out is None:
+        print("The plug never came clear of the port in that pull-out. Pull it out and up, then press Enter. Starting again.")
+        return None, seat, 0.0, None
+    demo = [(t, q) for t, q, _ in demo[:out + 4]]  # stop at the moment the plug is clear; what you did after is dropped
+    print(f"pull-out demo: {demo[-1][0]:.1f} s kept")
     return hover, seat, push_deg / 0.088 / float(np.abs(line[:4]).max()), demo
 
 
@@ -106,6 +112,10 @@ def is_out(arm, hover, seat) -> bool:
 def pull_out(arm, hover, seat, lead: float = 0.3, demo: list | None = None, shift=None) -> None:
     """Pull the plug out, by repeating your demonstrated pull-out if there is one. Asks for a hand if it stays in."""
     for _ in range(2):
+        if is_out(arm, hover, seat):  # the push never went in, or the plug is already clear: nothing to pull
+            arm.sync_goal()
+            arm.goto(hover - 0.6 * (seat - hover), speed=250.0, settle=0.2)
+            return
         if demo:
             arm.replay(demo, shift)
             ok = is_out(arm, hover, seat)
