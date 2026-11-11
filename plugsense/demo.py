@@ -165,24 +165,33 @@ def run_push(arm: Arm, skill: Skill, shift=None, hold: float = 0.4, seated_at: f
             "t_start": t_start, "rows": rows}
 
 
-def is_free(arm: Arm, skill: Skill, shift=None) -> bool:
+def is_free(arm: Arm, skill: Skill, shift=None, told_out: bool = False, say: bool = False) -> bool:
     """Is the plug out of the port? Tested with the motors relaxed, then with a gentle lift.
 
     A latched plug can be bent a few degrees away from the seated pose while the arm pulls on
     it, so the pose under load proves nothing. The arm first stops pulling: if it settles back
     near the seated pose, the plug is still in. Then it lifts 20 counts with very little force:
     a free arm follows, a latched one does not.
+
+    told_out: you have said the plug is out, so only the gentle lift is checked, not how far
+    the arm is from the seated pose (a plug pulled out by hand can sit just above the port).
     """
     off = np.zeros(len(ARM)) if shift is None else np.asarray(shift, float)
     arm.sync_goal()
     time.sleep(0.3)
     arm.sync_goal()
     start = arm.pos()
-    if not skill.away(start - off):
+    gap = float(np.abs(start - off - skill.seat)[:4].max())
+    if not told_out and gap < skill.near:
+        if say:
+            print(f"    check: arm is only {gap:.0f} counts from the seated pose (needs {skill.near:.0f})")
         return False
     up = -np.append(skill.line, 0.0) / np.abs(skill.line).max() * 20.0
     arm.goto(start + up, speed=100.0, settle=0.3)
-    return float((arm.pos() - start) @ up / (up @ up)) >= 0.5
+    followed = float((arm.pos() - start) @ up / (up @ up))
+    if say:
+        print(f"    check: {gap:.0f} counts from the seated pose, gentle lift followed {followed:.0%}")
+    return followed >= 0.5
 
 
 def run_pull(arm: Arm, skill: Skill, shift=None, tries: int = 2) -> bool:
@@ -191,4 +200,4 @@ def run_pull(arm: Arm, skill: Skill, shift=None, tries: int = 2) -> bool:
         if is_free(arm, skill, shift):
             return True
         arm.replay(skill.pull, shift)
-    return is_free(arm, skill, shift)
+    return is_free(arm, skill, shift, say=True)

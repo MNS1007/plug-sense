@@ -70,9 +70,11 @@ def cycle(arm, skill, home, folder: Path, name: str, mic, offset=None, extra: di
     else:
         print(f"  {name:<16} {outcome:<7} depth {r['frac']:.2f}  {r['seconds']:.1f} s")
     save_push(folder / name, r, {"offset": None if offset is None else np.asarray(offset).tolist(), **(extra or {})}, mic)
-    while not demo.run_pull(arm, skill, offset):
+    out = demo.run_pull(arm, skill, offset)
+    while not out:
         arm.sync_goal()  # stop pulling while you work on it
-        input("  The plug is still in the port. Pull it out by hand, then press Enter.")
+        said = input("  The arm thinks the plug is still in. If it is already out type o, otherwise pull it out by hand. Then press Enter. ")
+        out = demo.is_free(arm, skill, offset, told_out=True, say=True) if said.strip().lower() == "o" else demo.run_pull(arm, skill, offset)
     return outcome
 
 
@@ -132,9 +134,9 @@ def main():
         try:
             arm.sync_goal()  # stop pushing or pulling
             if home is not None and input("\nReturn to the start pose first? [Y/n] ").strip().lower() != "n":
-                while skill is not None and not demo.is_free(arm, skill):
+                while skill is not None and not demo.is_free(arm, skill, told_out=True, say=True):
                     arm.sync_goal()
-                    input("The plug is still in the port, so the arm will not move away. Pull it out by hand, then press Enter.")
+                    input("The arm could not lift, so the plug seems to be in the port. Pull it out by hand, then press Enter.")
                 arm.goto(home, speed=200.0)
             input("HOLD THE FOLLOWER ARM with your hand, then press Enter. The motors will let go.")
         except (EOFError, KeyboardInterrupt):
