@@ -16,7 +16,7 @@ NOISY = re.compile(r"Time|Counter|Timestamp|Uptime|Tick|Sequence|Statistics|Idle
 
 
 def run(cmd):
-    return subprocess.run(cmd, capture_output=True, text=True).stdout
+    return subprocess.run(cmd, capture_output=True, text=True, errors="replace").stdout
 
 
 def snapshot():
