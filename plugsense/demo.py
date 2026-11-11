@@ -72,7 +72,8 @@ def get_home(robot, leader, arm: Arm, ask: bool = True) -> np.ndarray:
 class Skill:
     """Your seat pose, the last stretch of your push, and your pull-out."""
 
-    def __init__(self, seat, hover, push, pull):
+    def __init__(self, seat, hover, push, pull, near: float = 45.0):
+        self.near = near
         self.seat, self.hover = np.asarray(seat, float), np.asarray(hover, float)
         self.push, self.pull = push, pull            # lists of (seconds, commanded goal)
         self.line = (self.seat - self.hover)[:4]     # wrist twist left out: it is not travel
@@ -81,16 +82,20 @@ class Skill:
         """0 at the start of the push, 1 at the pose where you had the plug seated."""
         return float((np.asarray(pose, float) - self.hover)[:4] @ self.line / (self.line @ self.line))
 
+    def away(self, pose) -> bool:
+        """True when the arm is clearly away from the seated pose, in any direction (wrist twist left out)."""
+        return bool(np.abs(np.asarray(pose, float) - self.seat)[:4].max() >= self.near)
+
     def save(self, path: Path) -> None:
         pack = lambda seq: [[t, q.tolist()] for t, q in seq]
         path.write_text(json.dumps({"motors": ARM, "seat": self.seat.tolist(), "hover": self.hover.tolist(),
-                                    "push": pack(self.push), "pull": pack(self.pull)}))
+                                    "push": pack(self.push), "pull": pack(self.pull), "near": self.near}))
 
     @classmethod
     def load(cls, path: Path) -> "Skill":
         d = json.loads(path.read_text())
         unpack = lambda seq: [(t, np.array(q, float)) for t, q in seq]
-        return cls(d["seat"], d["hover"], unpack(d["push"]), unpack(d["pull"]))
+        return cls(d["seat"], d["hover"], unpack(d["push"]), unpack(d["pull"]), d.get("near", 45.0))
 
 
 def build_skill(down: list, up: list, near: float = 45.0, lead_in: float = 60.0) -> Skill | str:
@@ -112,12 +117,13 @@ def build_skill(down: list, up: list, near: float = 45.0, lead_in: float = 60.0)
     moving = next((i for i, s in enumerate(down) if np.abs(s[1] - down[0][1]).max() > 3), 0)
     first = max(first, moving - 3, 0)  # skip the time you spent holding still before starting
     push = [(t - down[first][0], q) for t, q, _ in down[first:]]
-    skill = Skill(seat, hover, push, [])
-    clear = next((i for i, s in enumerate(up) if skill.depth(s[2]) <= -0.2), None)
-    if clear is None:
-        return "The plug never came clear of the port in the pull-out. Pull it out and up before pressing Enter."
+    skill = Skill(seat, hover, push, [], near)
+    away = [skill.away(s[2]) for s in up]
+    if not away[-1]:
+        return "At the end of the pull-out the arm was still at the seated pose. Pull the plug out and move it away before pressing Enter."
+    last_close = max((i for i, a in enumerate(away) if not a), default=0)  # after this step the arm stayed away for good
     moving = next((i for i, s in enumerate(up) if np.abs(s[1] - up[0][1]).max() > 3), 0)
-    cut = up[max(0, moving - 3):clear + 4]
+    cut = up[max(0, moving - 3):last_close + 15]
     skill.pull = [(t - cut[0][0], q) for t, q, _ in cut]
     return skill
 
@@ -154,8 +160,8 @@ def run_pull(arm: Arm, skill: Skill, shift=None, tries: int = 2) -> bool:
     """Repeat your pull-out until the plug is clear. Does nothing if it is not in."""
     off = np.zeros(len(ARM)) if shift is None else np.asarray(shift, float)
     for _ in range(tries + 1):
-        if skill.depth(arm.pos() - off) <= 0.3:
+        if skill.away(arm.pos() - off):
             return True
         arm.replay(skill.pull, shift)
         time.sleep(0.2)
-    return skill.depth(arm.pos() - off) <= 0.3
+    return skill.away(arm.pos() - off)

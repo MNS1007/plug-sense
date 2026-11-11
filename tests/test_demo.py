@@ -27,7 +27,7 @@ def test_build_skill_cuts_push_and_pull():
     assert not isinstance(skill, str)
     assert np.abs(skill.hover - SEAT)[:4].max() >= 45 and abs(skill.depth(SEAT) - 1) < 1e-6
     assert 0.9 < skill.push[-1][0] < 2.5 and np.allclose(skill.push[-1][1], SEAT + [0, 30, 0, 0, 0])
-    assert len(skill.pull) < 20 and skill.depth(skill.pull[-1][1]) < 0   # the idle start and the drive to TOP are dropped
+    assert len(skill.pull) < 30 and skill.away(skill.pull[-1][1])   # the idle start and most of the drive to TOP are dropped
 
 
 def test_build_skill_rejects_bad_demos():
@@ -48,7 +48,17 @@ def test_push_then_pull_on_a_simulated_arm(monkeypatch, tmp_path):
     arm = Arm(bus)
     r = demo.run_push(arm, skill)
     assert r["outcome"] == "seated" and len(r["rows"]) == len(skill.push)
-    assert demo.run_pull(arm, skill) is True and skill.depth(arm.pos()) <= 0.3
+    assert demo.run_pull(arm, skill) is True and skill.away(arm.pos())
     assert demo.run_pull(arm, skill) is True            # already out: nothing replayed
     shift = np.array([6, 0, 0, 0, 0.0])
     assert demo.run_push(arm, skill, shift)["outcome"] == "seated"   # depth is measured relative to the shifted push
+
+
+def test_pull_out_in_another_direction_counts_as_clear():
+    down = steps(approach() + [SEAT] * 10)
+    wrist_up = SEAT + np.array([0, 0, 0, 120, 0.0])     # raised with the wrist, not back along the push
+    shake = [SEAT + np.array([0, 0, 0, 60 * (-1) ** k, 0.0]) for k in range(12)]   # big shakes while still in
+    up = steps([SEAT] * 5 + shake + [SEAT] + [SEAT + (wrist_up - SEAT) * k / 9 for k in range(10)] + [wrist_up] * 40)
+    skill = demo.build_skill(down, up, near=45)
+    assert not isinstance(skill, str) and skill.away(skill.pull[-1][1])
+    assert len(skill.pull) > 20      # the shaking is kept, not cut at the first big swing
