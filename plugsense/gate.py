@@ -55,11 +55,14 @@ def save_push(folder: Path, result: dict, meta: dict, mic) -> None:
     (folder / "meta.json").write_text(json.dumps(meta, indent=2))
 
 
-def cycle(arm, skill, home, folder: Path, name: str, mic, offset=None, extra: dict | None = None, ask: bool = False) -> str:
+def cycle(arm, skill, home, folder: Path, name: str, mic, offset=None, extra: dict | None = None, ask: bool = False,
+          after_push=None) -> str:
     """One full attempt: start pose, your push, save, your pull-out."""
     arm.goto(home, speed=300.0)
     r = demo.run_push(arm, skill, offset)
     outcome = r["outcome"]
+    if after_push:
+        after_push()  # e.g. photograph the display while the plug is still in
     seen = input(f"  {name:<16} arm depth {r['frac']:.2f}. Is the display lit? [y/n] ").strip().lower() if ask else ""
     if seen in ("y", "n"):
         outcome = "seated" if seen == "y" else "jammed"

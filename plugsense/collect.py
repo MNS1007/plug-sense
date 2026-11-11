@@ -91,8 +91,11 @@ def collect_session(arm, cams, mic, session: int, skill, home, a, rng) -> dict:
         w.writerows(rows)
 
     def push(name, offset=None):
-        outcome = cycle(arm, skill, home, folder / "pushes", name, mic, offset, {"session": session})
-        cams["front"].save(folder / f"{name}_front_after.jpg")
+        def snap():
+            time.sleep(0.8)  # the display takes a moment to turn red
+            cams["front"].save(folder / f"{name}_front_after.jpg")
+
+        outcome = cycle(arm, skill, home, folder / "pushes", name, mic, offset, {"session": session}, after_push=snap)
         time.sleep(a.dark_wait if outcome == "seated" else 0.2)
         return outcome
 
