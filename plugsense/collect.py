@@ -133,7 +133,7 @@ def main():
     ap.add_argument("--lateral", type=float, default=24.0, help="largest sideways offset, in encoder counts (about 8 mm)")
     ap.add_argument("--speed", type=float, default=400.0)
     ap.add_argument("--push", type=float, default=12.0, help="push strength in degrees, as in plugsense.gate")
-    ap.add_argument("--near", type=float, default=70.0)
+    ap.add_argument("--near", type=float, default=45.0)
     ap.add_argument("--dark-wait", type=float, default=11.0, help="seconds to wait after a seated push so the display goes dark")
     ap.add_argument("--grasp", type=int, default=1, help="raise by one every time you re-grip the plug")
     ap.add_argument("--seed", type=int, default=None)

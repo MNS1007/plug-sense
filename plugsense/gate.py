@@ -54,8 +54,13 @@ def teleop_until_enter(robot, leader, prompt: str, arm=None) -> list:
 
 def pick_hover(path: list, seat: np.ndarray, near: float):
     """The pose on your own final approach where the busiest joint was still `near` counts from the seat."""
-    far = [i for i, q in enumerate(path) if np.abs(np.asarray(q) - seat).max() >= near]
-    return None if not far else np.asarray(path[far[-1]], float)
+    # The wrist twist (last joint) is left out: people twist the plug while seating it, and that is not travel.
+    far = [i for i, q in enumerate(path) if np.abs(np.asarray(q) - seat)[:4].max() >= near]
+    if not far:
+        return None
+    hover = np.asarray(path[far[-1]], float).copy()
+    hover[4] = seat[4]  # approach and push with the twist the plug had when seated
+    return hover
 
 
 def teach(robot, leader, arm, near: float, push_deg: float):
@@ -68,8 +73,6 @@ def teach(robot, leader, arm, near: float, push_deg: float):
         return None, seat, 0.0
     line = seat - hover
     print("hover -> seat, counts per joint:", {m: int(v) for m, v in zip(ARM, line)})
-    if abs(line[4]) > 30:
-        print(f"NOTE: the wrist twisted {abs(line[4]) * 0.088:.0f} degrees over the last stretch. A straight push down seats more reliably.")
     return hover, seat, push_deg / 0.088 / float(np.abs(line).max())
 
 
@@ -109,7 +112,7 @@ def main():
     ap.add_argument("--probe", action="store_true", help="also run G5: pushes from known offsets")
     ap.add_argument("--wiggle", type=float, default=3.0, help="wiggle size in encoder counts for the wiggle runs")
     ap.add_argument("--push", type=float, default=12.0, help="push strength: how many degrees the command may run ahead of the arm on the busiest joint")
-    ap.add_argument("--near", type=float, default=70.0, help="hover is taken where the busiest joint was this many counts from the seat (about 1 cm)")
+    ap.add_argument("--near", type=float, default=45.0, help="hover is taken where the busiest joint (wrist twist excluded) was this many counts from the seat, roughly 8 mm")
     ap.add_argument("--spot", default="", help="grid spot number, saved with every push")
     ap.add_argument("--out", default=str(Path(__file__).resolve().parent.parent / "data" / "pushes"))
     ap.add_argument("--rock", type=float, default=40.0, help="wrist rocking size for pull-outs, in encoder counts")

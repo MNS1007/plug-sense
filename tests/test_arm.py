@@ -126,4 +126,6 @@ def test_pick_hover_uses_the_last_approach():
     last = SEAT - np.array([0, 75, 0, 0, 0.0])
     path = [far, near, SEAT, near, far, last, near, SEAT]   # went in, backed off, came in again
     assert np.allclose(pick_hover(path, seat, 70), last)
+    twisted = [far + np.array([0, 0, 0, 0, 90.0]), SEAT + np.array([0, 0, 0, 0, 90.0]), SEAT]
+    assert np.allclose(pick_hover(twisted, seat, 70), far)   # twist alone is not distance, and hover takes the seat's twist
     assert pick_hover([near, SEAT], seat, 70) is None
