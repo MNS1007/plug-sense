@@ -55,12 +55,17 @@ def save_push(folder: Path, result: dict, meta: dict, mic) -> None:
     (folder / "meta.json").write_text(json.dumps(meta, indent=2))
 
 
-def cycle(arm, skill, home, folder: Path, name: str, mic, offset=None, extra: dict | None = None) -> str:
+def cycle(arm, skill, home, folder: Path, name: str, mic, offset=None, extra: dict | None = None, ask: bool = False) -> str:
     """One full attempt: start pose, your push, save, your pull-out."""
     arm.goto(home, speed=300.0)
     r = demo.run_push(arm, skill, offset)
     outcome = r["outcome"]
-    print(f"  {name:<16} {outcome:<7} depth {r['frac']:.2f}  {r['seconds']:.1f} s")
+    seen = input(f"  {name:<16} arm depth {r['frac']:.2f}. Is the display lit? [y/n] ").strip().lower() if ask else ""
+    if seen in ("y", "n"):
+        outcome = "seated" if seen == "y" else "jammed"
+        r["outcome"], r["display"] = outcome, seen == "y"
+    else:
+        print(f"  {name:<16} {outcome:<7} depth {r['frac']:.2f}  {r['seconds']:.1f} s")
     save_push(folder / name, r, {"offset": None if offset is None else np.asarray(offset).tolist(), **(extra or {})}, mic)
     if not demo.run_pull(arm, skill, offset):
         input("  The arm could not pull the plug out. Free it by hand, then press Enter.")
@@ -74,6 +79,8 @@ def main():
     ap.add_argument("--replays", type=int, default=20)
     ap.add_argument("--probe", action="store_true", help="also run G5: pushes from known offsets")
     ap.add_argument("--near", type=float, default=45.0, help="the push starts where the busiest joint (twist excluded) was this many counts from the seat, roughly 8 mm")
+    ap.add_argument("--lead-in", type=float, default=60.0, help="seconds of your approach to repeat before the last stretch; the default repeats all of it")
+    ap.add_argument("--ask", action="store_true", help="after each push, ask you whether the display is lit and use that as the result")
     ap.add_argument("--spot", default="", help="saved with every push")
     ap.add_argument("--out", default=str(Path(__file__).resolve().parent.parent / "data" / "pushes"))
     a = ap.parse_args()
@@ -88,7 +95,7 @@ def main():
     home = None
     try:
         home = demo.get_home(robot, leader, arm)
-        skill = demo.teach(robot, leader, arm, home, a.near)
+        skill = demo.teach(robot, leader, arm, home, a.near, a.lead_in)
         if skill is None:
             return
         session.mkdir(parents=True, exist_ok=True)
@@ -97,7 +104,7 @@ def main():
         arm.sync_goal()
 
         print(f"\nG4: {a.replays} replays of your push")
-        g4 = [cycle(arm, skill, home, session, f"g4-{i:02d}", mic, extra={"spot": a.spot}) for i in range(a.replays)]
+        g4 = [cycle(arm, skill, home, session, f"g4-{i:02d}", mic, extra={"spot": a.spot}, ask=a.ask) for i in range(a.replays)]
         seated = g4.count("seated")
         print(f"G4 result: {seated} of {a.replays} seated  ->  {'PASS' if seated * 2 >= a.replays else 'FAIL'} (pass is half or more)")
 
@@ -110,7 +117,7 @@ def main():
                         off = np.zeros(len(ARM))
                         off[joint] = sign * step
                         tally.setdefault(step, []).append(
-                            cycle(arm, skill, home, session, f"g5-{jname}{sign * step:+d}", mic, off, {"spot": a.spot}))
+                            cycle(arm, skill, home, session, f"g5-{jname}{sign * step:+d}", mic, off, {"spot": a.spot}, a.ask))
             print("\nG5 result (seated out of 4 pushes at each offset size):")
             for step, outs in tally.items():
                 print(f"  {step} counts off     {outs.count('seated')} of {len(outs)}")

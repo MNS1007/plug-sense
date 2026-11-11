@@ -93,12 +93,14 @@ class Skill:
         return cls(d["seat"], d["hover"], unpack(d["push"]), unpack(d["pull"]))
 
 
-def build_skill(down: list, up: list, near: float = 45.0, lead_in: float = 1.0) -> Skill | str:
+def build_skill(down: list, up: list, near: float = 45.0, lead_in: float = 60.0) -> Skill | str:
     """Cut the two recordings into a push and a pull-out. Returns a message if they cannot be used.
 
     down: teleop steps ending with the plug seated.  up: teleop steps of the pull-out.
     The push starts where the arm was last `near` counts (busiest joint, twist excluded) from the
-    seated pose, plus lead_in seconds before that so the arm arrives the way you did.
+    seated pose (that pose is the reference for depth). The replayed motion begins lead_in seconds
+    before that; by default that is your whole approach from the start pose, so the arm arrives
+    with the same history of moves, which matters on servos with play.
     """
     seat = down[-1][2]
     far = [i for i, s in enumerate(down) if np.abs(s[2] - seat)[:4].max() >= near]
@@ -107,6 +109,8 @@ def build_skill(down: list, up: list, near: float = 45.0, lead_in: float = 1.0) 
     start = far[-1]
     hover = down[start][2]
     first = max(0, start - int(lead_in * TELEOP_HZ))
+    moving = next((i for i, s in enumerate(down) if np.abs(s[1] - down[0][1]).max() > 3), 0)
+    first = max(first, moving - 3, 0)  # skip the time you spent holding still before starting
     push = [(t - down[first][0], q) for t, q, _ in down[first:]]
     skill = Skill(seat, hover, push, [])
     clear = next((i for i, s in enumerate(up) if skill.depth(s[2]) <= -0.2), None)
@@ -118,30 +122,30 @@ def build_skill(down: list, up: list, near: float = 45.0, lead_in: float = 1.0) 
     return skill
 
 
-def teach(robot, leader, arm: Arm, home: np.ndarray, near: float = 45.0) -> Skill | None:
+def teach(robot, leader, arm: Arm, home: np.ndarray, near: float = 45.0, lead_in: float = 60.0) -> Skill | None:
     arm.sync_goal()
     arm.goto(home, speed=300.0)
     if not wait_for_match(robot, leader):
         return None
     down = teleop(robot, leader, arm, "\nYou have control. Come down and SEAT the plug. Press Enter while it is seated.")
     up = teleop(robot, leader, arm, "Now PULL THE PLUG OUT the way that works. Press Enter once it is out and above the port.")
-    skill = build_skill(down, up, near)
+    skill = build_skill(down, up, near, lead_in)
     if isinstance(skill, str):
         print(skill)
         return None
-    print(f"push: last {skill.push[-1][0]:.1f} s of your approach.  pull-out: {skill.pull[-1][0]:.1f} s.")
+    print(f"plug-in: {skill.push[-1][0]:.1f} s of your motion will be repeated.  pull-out: {skill.pull[-1][0]:.1f} s.")
     print("push travel, counts per joint:", {m: int(v) for m, v in zip(ARM, skill.seat - skill.hover)})
     return skill
 
 
-def run_push(arm: Arm, skill: Skill, shift=None, hold: float = 0.4) -> dict:
+def run_push(arm: Arm, skill: Skill, shift=None, hold: float = 0.4, seated_at: float = 0.85) -> dict:
     """Repeat your push (optionally shifted by a known offset) and report where the arm ended up."""
     t_start = time.monotonic()
     rows = arm.replay(skill.push, shift, log=True)
     time.sleep(hold)
     off = np.zeros(len(ARM)) if shift is None else np.asarray(shift, float)
     depth = skill.depth(arm.pos() - off)
-    outcome = "jammed" if depth < 0.85 else ("seated" if depth <= 1.3 else "overrun")
+    outcome = "jammed" if depth < seated_at else ("seated" if depth <= 1.3 else "overrun")
     return {"outcome": outcome, "frac": round(depth, 3), "seconds": round(time.monotonic() - t_start, 2),
             "t_start": t_start, "rows": rows}
 
