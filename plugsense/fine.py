@@ -50,7 +50,7 @@ def load_spots(folder: Path) -> list[dict]:
                     continue
                 cmd = np.array([float(r[f"cmd_{m}"]) for m in ARM], np.float32)
                 meas = np.array([float(r[f"meas_{m}"]) for m in ARM], np.float32)
-                rows.append({"image": str(d / r["wrist"]), "pos": meas, "target": hover - cmd})
+                rows.append({"image": str(d / r["wrist"]), "pos": meas, "target": hover - meas})  # measured to measured
         spots.append({"name": d.name, "spot": meta["spot"], "held_out": meta["held_out"], "hover": hover, "rows": rows})
     return spots
 
