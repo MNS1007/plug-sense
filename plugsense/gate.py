@@ -3,8 +3,9 @@
   python -m plugsense.gate --mic-device 1                 # G4: 20 replays from the taught pose
   python -m plugsense.gate --mic-device 1 --probe         # G4, then G5: pushes from known offsets
 
-You seat the plug once by teleop, coming down from above. The hover pose is taken from
-your own approach, about 1 cm before the seat. The arm then works alone. KEEP ONE HAND NEAR THE POWER SWITCH.
+You seat the plug once by teleop, coming down from above, then pull it out once the way
+that works. The hover pose is taken from your approach, and the arm repeats your
+pull-out after every push. The arm then works alone. KEEP ONE HAND NEAR THE POWER SWITCH.
 At the end it waits for you to hold the arm before it lets go.
 
 Every push is saved under data/pushes/ with servo positions, loads and contact audio.
@@ -37,6 +38,22 @@ logging.getLogger("lerobot.robots.utils").setLevel(logging.ERROR)  # hide the pe
 STEPS = [1, 2, 4, 6]
 
 
+def record_commands(robot, leader, arm, prompt: str, max_seconds: float = 25.0) -> list:
+    """Teleop until Enter and return what you commanded, as (seconds, goal) pairs, without the still part at the start."""
+    print(prompt)
+    done = threading.Event()
+    threading.Thread(target=lambda: (sys.stdin.readline(), done.set()), daemon=True).start()
+    demo, t_start = [], time.monotonic()
+    while not done.is_set():
+        t0 = time.monotonic()
+        robot.send_action(leader.get_action())
+        demo.append((t0 - t_start, arm.commanded()))
+        time.sleep(max(0.0, 1 / 30 - (time.monotonic() - t0)))
+    moving = next((i for i, (_, q) in enumerate(demo) if np.abs(q - demo[0][1]).max() > 3), 0)
+    demo = demo[max(0, moving - 3):]
+    return [(t - demo[0][0], q) for t, q in demo if t - demo[0][0] <= max_seconds]
+
+
 def teleop_until_enter(robot, leader, prompt: str, arm=None) -> list:
     """Teleop until Enter. With arm given, also returns the path the follower took (raw counts)."""
     print(prompt)
@@ -64,22 +81,40 @@ def pick_hover(path: list, seat: np.ndarray, near: float):
 
 
 def teach(robot, leader, arm, near: float, push_deg: float):
-    """You seat the plug once. Returns hover, seat and the push strength as a fraction of that line."""
+    """You seat the plug once, then pull it out once. Returns hover, seat, push strength and your pull-out."""
     path = teleop_until_enter(robot, leader, "\nSEAT the plug fully by teleop, coming down from above. Press Enter while it is seated.", arm)
     seat = arm.pos()
     hover = pick_hover(path, seat, near)
     if hover is None:
         print("The arm never got far enough from the seated pose. Start from higher up and try again.")
-        return None, seat, 0.0
+        return None, seat, 0.0, None
     line = seat - hover
     print("hover -> seat, counts per joint:", {m: int(v) for m, v in zip(ARM, line)})
-    return hover, seat, push_deg / 0.088 / float(np.abs(line).max())
+    demo = record_commands(robot, leader, arm, "Now PULL THE PLUG OUT by teleop, the way that works for you. "
+                                               "Press Enter once it is out and above the port.")
+    if not is_out(arm, hover, seat):
+        print("The plug does not look out yet (the arm is still near the seated pose). The pull-out demo may not work.")
+    print(f"pull-out demo: {demo[-1][0]:.1f} s, {len(demo)} steps")
+    return hover, seat, push_deg / 0.088 / float(np.abs(line[:4]).max()), demo
 
 
-def pull_out(arm, hover, seat, lead: float = 0.3) -> None:
-    """Pull the plug out; if it stays stuck, wait for a hand and carry on from above the port."""
-    if arm.retract(hover, seat, lead_max=lead):
-        return
+def is_out(arm, hover, seat) -> bool:
+    line = seat - hover
+    return float((arm.pos() - hover)[:4] @ line[:4] / (line[:4] @ line[:4])) <= 0.3
+
+
+def pull_out(arm, hover, seat, lead: float = 0.3, demo: list | None = None, shift=None) -> None:
+    """Pull the plug out, by repeating your demonstrated pull-out if there is one. Asks for a hand if it stays in."""
+    for _ in range(2):
+        if demo:
+            arm.replay(demo, shift)
+            ok = is_out(arm, hover, seat)
+        else:
+            ok = arm.retract(hover, seat, lead_max=lead)
+        if ok:
+            arm.sync_goal()
+            arm.goto(hover - 0.6 * (seat - hover), speed=250.0, settle=0.2)
+            return
     input("  The arm could not pull the plug out. Free it by hand, then press Enter.")
     arm.sync_goal()
     arm.goto(hover - 0.6 * (seat - hover), speed=200.0)
@@ -129,7 +164,7 @@ def main():
     session = Path(a.out) / time.strftime("%Y%m%d-%H%M%S")
 
     try:
-        hover, seat, a.lead = teach(robot, leader, arm, a.near, a.push)
+        hover, seat, a.lead, demo = teach(robot, leader, arm, a.near, a.push)
         if hover is None:
             return
         a.pull_lead = a.lead * a.pull / a.push
@@ -137,8 +172,10 @@ def main():
         (session / "teach.json").write_text(json.dumps(
             {"motors": ARM, "hover": hover.tolist(), "seat": seat.tolist(), "spot": a.spot}, indent=2))
 
-        input("\nLet go of the leader arm. The follower now moves by itself. Press Enter to start.")
-        pull_out(arm, hover, seat, a.pull_lead)
+        (session / "pull_demo.json").write_text(json.dumps([[t, q.tolist()] for t, q in demo]))
+        input("\nLower the leader arm onto the desk. The follower now moves by itself. Press Enter to start.")
+        arm.sync_goal()
+        arm.goto(hover - 0.6 * (seat - hover), speed=250.0)
 
         def push(name: str, offset=None, wiggle=0.0) -> str:
             arm.approach(hover + (0 if offset is None else offset), seat + (0 if offset is None else offset))
@@ -148,7 +185,7 @@ def main():
             outcome = r["outcome"]
             print(f"  {name:<22} {outcome:<7} depth {r['frac']:.2f}  {r['seconds']:.1f} s")
             save_push(session / name, r, meta, mic)
-            pull_out(arm, hover, seat, a.pull_lead)
+            pull_out(arm, hover, seat, a.pull_lead, demo, offset)
             return outcome
 
         print(f"\nG4: {a.replays} replays from the taught pose")

@@ -63,13 +63,14 @@ def push_offsets(n: int, rng) -> list[np.ndarray]:
     return out
 
 
-def collect_spot(arm, cams, mic, spot: int, hover, seat, home, a, rng) -> dict:
+def collect_spot(arm, cams, mic, spot: int, hover, seat, home, a, rng, demo=None) -> dict:
     held = spot in HELD_OUT
     n = a.held_samples if held else a.samples
     folder = ROOT / "collect" / f"{time.strftime('%Y%m%d-%H%M%S')}-spot{spot:02d}"
     (folder / "img").mkdir(parents=True, exist_ok=True)
     line = seat - hover
-    pull_out(arm, hover, seat, a.pull_lead)
+    arm.sync_goal()
+    arm.goto(hover - 0.6 * line, speed=250.0)  # you already pulled the plug out during teaching
 
     rows = []
     for i, (off, t) in enumerate(sample_offsets(n, a.lateral, rng)):
@@ -99,7 +100,7 @@ def collect_spot(arm, cams, mic, spot: int, hover, seat, home, a, rng) -> dict:
         cams["front"].save(folder / f"{name}_front_after.jpg")
         save_push(folder / "pushes" / name, r, {"spot": spot, "offset": None if offset is None else offset.tolist(),
                                               "hover": hover.tolist(), "seat": seat.tolist(), "lead": a.lead}, mic)
-        pull_out(arm, hover, seat, a.pull_lead)
+        pull_out(arm, hover, seat, a.pull_lead, demo, offset)
         time.sleep(a.dark_wait if outcome == "seated" else 0.2)
         return outcome
 
@@ -172,12 +173,12 @@ def main():
                 continue
             spot = int(raw)
             print("Hold the leader arm (the follower will move to match it).")
-            hover, seat, a.lead = teach(robot, leader, arm, a.near, a.push)
+            hover, seat, a.lead, demo = teach(robot, leader, arm, a.near, a.push)
             if hover is None:
                 continue
             a.pull_lead = a.lead * a.pull / a.push
-            input("Let go of the leader arm. Press Enter and the follower works alone.")
-            meta = collect_spot(arm, cams, mic, spot, hover, seat, home, a, rng)
+            input("Lower the leader arm onto the desk. Press Enter and the follower works alone.")
+            meta = collect_spot(arm, cams, mic, spot, hover, seat, home, a, rng, demo)
             done.append(spot)
             print(f"spot {spot} saved ({'held-out' if meta['held_out'] else 'training'}). Arm is at home. Move the plate.")
     except KeyboardInterrupt:

@@ -22,6 +22,8 @@ class FakeBus:
                 if f > self.wall:
                     self.p -= (f - self.wall) * line
             return dict(zip(ARM, self.p))
+        if name == "Goal_Position":
+            return dict(zip(ARM, self.goal))
         return dict(zip(ARM, [0.0] * len(ARM)))
 
     def sync_write(self, name, values, normalize=True):
@@ -129,3 +131,17 @@ def test_pick_hover_uses_the_last_approach():
     twisted = [far + np.array([0, 0, 0, 0, 90.0]), SEAT + np.array([0, 0, 0, 0, 90.0]), SEAT]
     assert np.allclose(pick_hover(twisted, seat, 70), far)   # twist alone is not distance, and hover takes the seat's twist
     assert pick_hover([near, SEAT], seat, 70) is None
+
+
+def test_replay_repeats_commands_with_a_shift(monkeypatch):
+    fast(monkeypatch)
+    bus = FakeBus(SEAT, HOVER, SEAT)
+    a = Arm(bus)
+    sent = []
+    orig = bus.sync_write
+    bus.sync_write = lambda n, v, normalize=True: (sent.append([v[m] for m in ARM]), orig(n, v, normalize))
+    demo = [(0.0, SEAT), (0.1, SEAT + np.array([0, -20, 0, 30, 0.0])), (0.2, HOVER - np.array([0, 40, 0, 0, 0.0]))]
+    shift = np.array([4, 0, 0, 0, 0.0])
+    a.replay(demo, shift)
+    assert sent[-1] == list((demo[-1][1] + shift).astype(int)) and sent[-2] == list((demo[1][1] + shift).astype(int))
+    assert np.allclose(a.commanded(), demo[-1][1] + shift)

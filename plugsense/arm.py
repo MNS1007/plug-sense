@@ -50,6 +50,24 @@ class Arm:
         d = self.bus.sync_read("Present_Load", ARM, normalize=False)
         return np.array([decode_load(d[m]) for m in ARM], float)
 
+    def commanded(self) -> np.ndarray:
+        """The goal the servos are being driven to right now (during teleop this is your hand's command)."""
+        d = self.bus.sync_read("Goal_Position", ARM, normalize=False)
+        return np.array([d[m] for m in ARM], float)
+
+    def replay(self, demo: list, shift: np.ndarray | None = None) -> None:
+        """Send a recorded sequence of (seconds, goal) again with the same timing.
+
+        Replaying the commands, not the measured path, reproduces the forces: a stuck plug
+        holds the arm back the same way it did during the demonstration.
+        """
+        off = 0.0 if shift is None else np.asarray(shift, float)
+        self.goto(demo[0][1] + off, speed=400.0, settle=0.1)
+        t0 = time.monotonic()
+        for dt, q in demo:
+            time.sleep(max(0.0, dt - (time.monotonic() - t0)))
+            self.write(q + off)
+
     def write(self, q: np.ndarray) -> None:
         q = np.clip(np.round(q), self.lo, self.hi)
         self.bus.sync_write("Goal_Position", {m: int(v) for m, v in zip(ARM, q)}, normalize=False)
