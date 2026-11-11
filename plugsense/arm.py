@@ -55,18 +55,24 @@ class Arm:
         d = self.bus.sync_read("Goal_Position", ARM, normalize=False)
         return np.array([d[m] for m in ARM], float)
 
-    def replay(self, demo: list, shift: np.ndarray | None = None) -> None:
+    def replay(self, demo: list, shift: np.ndarray | None = None, log: bool = False) -> list:
         """Send a recorded sequence of (seconds, goal) again with the same timing.
 
         Replaying the commands, not the measured path, reproduces the forces: a stuck plug
-        holds the arm back the same way it did during the demonstration.
+        holds the arm back the same way it did during the demonstration. With log=True,
+        returns the measured pose and servo loads at every step.
         """
         off = 0.0 if shift is None else np.asarray(shift, float)
         self.goto(demo[0][1] + off, speed=400.0, settle=0.1)
-        t0 = time.monotonic()
+        rows, t0 = [], time.monotonic()
         for dt, q in demo:
             time.sleep(max(0.0, dt - (time.monotonic() - t0)))
             self.write(q + off)
+            if log:
+                p, load = self.pos(), self.load()
+                rows.append({"t": time.monotonic(), **{f"cmd_{m}": v for m, v in zip(ARM, self.goal)},
+                             **{f"pos_{m}": v for m, v in zip(ARM, p)}, **{f"load_{m}": v for m, v in zip(ARM, load)}})
+        return rows
 
     def write(self, q: np.ndarray) -> None:
         q = np.clip(np.round(q), self.lo, self.hi)
