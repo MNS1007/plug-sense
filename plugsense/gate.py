@@ -103,6 +103,7 @@ def main():
             return
         session.mkdir(parents=True, exist_ok=True)
         skill.save(session / "skill.json")
+        demo.save_taught(skill, session / "taught.json")
         input("\nLower the leader arm onto the desk. The follower now works alone. Press Enter to start.")
         arm.sync_goal()
 

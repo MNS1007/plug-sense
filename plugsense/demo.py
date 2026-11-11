@@ -139,9 +139,18 @@ def teach(robot, leader, arm: Arm, home: np.ndarray, near: float = 45.0, lead_in
     if isinstance(skill, str):
         print(skill)
         return None
+    skill.taught = {"down": down, "up": up}  # your own run, kept as the reference for a good one
     print(f"plug-in: {skill.push[-1][0]:.1f} s of your motion will be repeated.  pull-out: {skill.pull[-1][0]:.1f} s.")
     print("push travel, counts per joint:", {m: int(v) for m, v in zip(ARM, skill.seat - skill.hover)})
     return skill
+
+
+def save_taught(skill: Skill, path: Path) -> None:
+    """Write the measured path of your demonstration next to the skill, so replays can be compared with it."""
+    taught = getattr(skill, "taught", None)
+    if taught:
+        pack = lambda steps: [[t, cmd.tolist(), pos.tolist()] for t, cmd, pos in steps]
+        path.write_text(json.dumps({"motors": ARM, "down": pack(taught["down"]), "up": pack(taught["up"])}))
 
 
 def run_push(arm: Arm, skill: Skill, shift=None, hold: float = 0.4, seated_at: float = 0.85) -> dict:
