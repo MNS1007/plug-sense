@@ -89,7 +89,7 @@ class LatchBus(FakeBus):
 
     def sync_write(self, name, values, normalize=True):
         super().sync_write(name, values, normalize)
-        side = np.sign(round(self.goal[0] - HOVER[0]))
+        side = np.sign(round(self.goal[3] - SEAT[3]))
         if side and side != self.last:
             self.swings, self.last = self.swings + 1, side
 

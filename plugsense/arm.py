@@ -12,7 +12,7 @@ import time
 import numpy as np
 
 ARM = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll"]
-PAN, LIFT, ELBOW = 0, 1, 2
+PAN, LIFT, ELBOW, WRIST = 0, 1, 2, 3
 HZ = 50.0
 
 
@@ -28,6 +28,8 @@ def decode_load(v: float) -> float:
 
 
 class Arm:
+    rock = 20.0  # wrist rocking size for pull-outs, in encoder counts (about 1.8 degrees)
+
     def __init__(self, bus, limits: dict[str, tuple[int, int]] | None = None):
         self.bus = bus
         lim = limits or {}
@@ -146,13 +148,15 @@ class Arm:
                 "t_start": t_start, "rows": rows}
 
     def retract(self, hover: np.ndarray, seat: np.ndarray, seconds: float = 1.5, lead_max: float = 0.40,
-                rock: float = 5.0, rock_hz: float = 3.0, timeout: float = 10.0, to: float = -0.6) -> bool:
+                rock: float | None = None, rock_hz: float = 3.0, timeout: float = 10.0, to: float = -0.6) -> bool:
         """Pull out along the insertion line to a point above hover. Returns False if the plug stayed stuck.
 
         The commanded point never runs more than lead_max ahead of the measured one. Whenever the
-        arm is held back at that cap (the latch is holding), it rocks in a small circle on pan and
-        elbow, which releases a USB-C latch with far less force than a straight pull.
+        arm is held back at that cap (the latch is holding), it rocks the plug front to back with
+        the wrist (rock = size in encoder counts), plus a little elbow and pan, which releases a
+        USB-C latch with far less force than a straight pull.
         """
+        rock = self.rock if rock is None else rock
         hover, seat = np.asarray(hover, float), np.asarray(seat, float)
         line = seat - hover
         length2 = float(line @ line)
@@ -169,8 +173,9 @@ class Arm:
             cmd = hover + side + g * line
             if rock and f - g >= 0.9 * lead_max:
                 ph = 2 * math.pi * rock_hz * (now - t_start)
-                cmd[PAN] += rock * math.sin(ph)
-                cmd[ELBOW] += rock * math.cos(ph)
+                cmd[WRIST] += rock * math.sin(ph)
+                cmd[ELBOW] += 0.3 * rock * math.sin(ph)
+                cmd[PAN] += 0.2 * rock * math.cos(ph)
             self.write(cmd)
             time.sleep(max(0.0, 1.0 / HZ - (time.monotonic() - now)))
         return False

@@ -81,6 +81,7 @@ def main():
     ap.add_argument("--lead", type=float, default=0.30, help="push cap, as a fraction of the hover-to-seat distance")
     ap.add_argument("--spot", default="", help="grid spot number, saved with every push")
     ap.add_argument("--out", default=str(Path(__file__).resolve().parent.parent / "data" / "pushes"))
+    ap.add_argument("--rock", type=float, default=20.0, help="wrist rocking size for pull-outs, in encoder counts")
     a = ap.parse_args()
 
     robot = SO101Follower(SO101FollowerConfig(port=FOLLOWER_PORT, id="follower", max_relative_target=10.0))
@@ -88,6 +89,7 @@ def main():
     robot.connect()
     leader.connect()
     arm = Arm.from_robot(robot)
+    arm.rock = a.rock
     mic = Mic(int(a.mic_device) if a.mic_device and a.mic_device.isdigit() else a.mic_device) if a.mic_device else None
     session = Path(a.out) / time.strftime("%Y%m%d-%H%M%S")
 

@@ -136,6 +136,7 @@ def main():
     ap.add_argument("--dark-wait", type=float, default=11.0, help="seconds to wait after a seated push so the display goes dark")
     ap.add_argument("--grasp", type=int, default=1, help="raise by one every time you re-grip the plug")
     ap.add_argument("--seed", type=int, default=None)
+    ap.add_argument("--rock", type=float, default=20.0, help="wrist rocking size for pull-outs, in encoder counts")
     a = ap.parse_args()
     rng = np.random.default_rng(a.seed)
 
@@ -145,6 +146,7 @@ def main():
     robot.connect()
     leader.connect()
     arm = Arm.from_robot(robot)
+    arm.rock = a.rock
     mic = Mic(int(a.mic_device) if a.mic_device and a.mic_device.isdigit() else a.mic_device) if a.mic_device else None
     done = []
     try:
