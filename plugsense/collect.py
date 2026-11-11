@@ -5,8 +5,8 @@
 Once per session you teach a HOME pose (arm raised, clear of the power bank in the
 front camera). Then, for every grid spot:
   1. type the spot number
-  2. teleop the plug to about 10 mm straight above the port, press Enter   (hover)
-  3. seat the plug fully, press Enter                                       (seat)
+  2. seat the plug fully by teleop, coming down from above, press Enter
+  3. (the hover pose is taken from your approach, about 1 cm before the seat)
   4. let go of the leader; the arm pulls out and works alone:
        - photographs many poses around hover; each is labelled with the joint offset
          back to hover, which needs no human and no calibration
@@ -34,7 +34,7 @@ from lerobot.teleoperators.so_leader import SO101Leader, SO101LeaderConfig
 from plugsense.arm import ARM, ELBOW, LIFT, PAN, Arm
 from plugsense.attempt_log import FOLLOWER_PORT, LEADER_PORT, Mic
 from plugsense.cameras import Camera
-from plugsense.gate import pull_out, save_push, teleop_until_enter
+from plugsense.gate import pull_out, save_push, teach, teleop_until_enter
 
 HELD_OUT = {4, 8, 15, 17, 23, 26}
 ROOT = Path(__file__).resolve().parent.parent / "data"
@@ -132,7 +132,8 @@ def main():
     ap.add_argument("--pushes", type=int, default=6)
     ap.add_argument("--lateral", type=float, default=24.0, help="largest sideways offset, in encoder counts (about 8 mm)")
     ap.add_argument("--speed", type=float, default=400.0)
-    ap.add_argument("--lead", type=float, default=1.0)
+    ap.add_argument("--push", type=float, default=12.0, help="push strength in degrees, as in plugsense.gate")
+    ap.add_argument("--near", type=float, default=70.0)
     ap.add_argument("--dark-wait", type=float, default=11.0, help="seconds to wait after a seated push so the display goes dark")
     ap.add_argument("--grasp", type=int, default=1, help="raise by one every time you re-grip the plug")
     ap.add_argument("--seed", type=int, default=None)
@@ -169,12 +170,9 @@ def main():
             if not raw.isdigit() or not 1 <= int(raw) <= 30:
                 continue
             spot = int(raw)
-            teleop_until_enter(robot, leader, "Hold the leader arm (the follower will move to match it).\n1/2  Plug about 10 mm straight ABOVE the port. Press Enter.")
-            hover = arm.pos()
-            teleop_until_enter(robot, leader, "2/2  SEAT the plug fully. Press Enter while it is seated.")
-            seat = arm.pos()
-            if np.abs(seat - hover).max() < 8:
-                print("hover and seat are almost the same pose; redo this spot")
+            print("Hold the leader arm (the follower will move to match it).")
+            hover, seat, a.lead = teach(robot, leader, arm, a.near, a.push)
+            if hover is None:
                 continue
             input("Let go of the leader arm. Press Enter and the follower works alone.")
             meta = collect_spot(arm, cams, mic, spot, hover, seat, home, a, rng)

@@ -98,7 +98,8 @@ class Arm:
         the measured one, and never more than overshoot past the seat, which caps the push
         force of a position servo. The push ends when the arm stops making progress while
         held at that cap.
-          seated  stopped at or beyond seated_at of the way
+          seated  stopped between seated_at and 1.25 of the way
+          overrun stopped well past the taught seat (the plug slid by, or the taught pose was off)
           jammed  stopped earlier
           missed  went past the seat without ever being stopped
         offset shifts the whole line (counts per joint), for probing from a known error.
@@ -141,7 +142,7 @@ class Arm:
                 outcome = "missed"
                 break
             if stalled:
-                outcome = "seated" if f >= seated_at else "jammed"
+                outcome = "jammed" if f < seated_at else ("seated" if f <= 1.25 else "overrun")
                 break
             time.sleep(max(0.0, 1.0 / HZ - (time.monotonic() - now)))
         final = frac(self.pos())
@@ -167,8 +168,9 @@ class Arm:
         g, t_start = f0, time.monotonic()
         while (now := time.monotonic()) - t_start < timeout:
             f = float((self.pos() - hover - side) @ line / length2)
-            if f <= to + 0.05:
-                self.goto(hover + side + to * line, speed=200.0, settle=0.2)
+            if f <= 0.15:  # back near hover: the plug is out of the port
+                self.sync_goal()
+                self.goto(hover + side + to * line, speed=250.0, settle=0.2)
                 return True
             g = max(g - (f0 - to) / (seconds * HZ), to, f - lead_max)
             cmd = hover + side + g * line

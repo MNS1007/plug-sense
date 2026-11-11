@@ -117,3 +117,13 @@ def test_retract_reports_stuck(monkeypatch):
     fast(monkeypatch)
     a = Arm(LatchBus(SEAT, HOVER, SEAT, need=10**9))
     assert a.retract(HOVER, SEAT, timeout=3.0) is False
+
+
+def test_pick_hover_uses_the_last_approach():
+    from plugsense.gate import pick_hover
+    seat = SEAT
+    far, near = SEAT - np.array([0, 200, 0, 0, 0.0]), SEAT - np.array([0, 40, 0, 0, 0.0])
+    last = SEAT - np.array([0, 75, 0, 0, 0.0])
+    path = [far, near, SEAT, near, far, last, near, SEAT]   # went in, backed off, came in again
+    assert np.allclose(pick_hover(path, seat, 70), last)
+    assert pick_hover([near, SEAT], seat, 70) is None

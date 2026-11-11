@@ -3,8 +3,8 @@
   python -m plugsense.gate --mic-device 1                 # G4: 20 replays from the taught pose
   python -m plugsense.gate --mic-device 1 --probe         # G4, then G5: pushes from known offsets
 
-You teach two poses by teleop: hover (plug about 10 mm straight above the port) and
-seat (plug fully in). The arm then works alone. KEEP ONE HAND NEAR THE POWER SWITCH.
+You seat the plug once by teleop, coming down from above. The hover pose is taken from
+your own approach, about 1 cm before the seat. The arm then works alone. KEEP ONE HAND NEAR THE POWER SWITCH.
 At the end it waits for you to hold the arm before it lets go.
 
 Every push is saved under data/pushes/ with servo positions, loads and contact audio.
@@ -37,14 +37,40 @@ logging.getLogger("lerobot.robots.utils").setLevel(logging.ERROR)  # hide the pe
 STEPS = [1, 2, 4, 6]
 
 
-def teleop_until_enter(robot, leader, prompt: str) -> None:
+def teleop_until_enter(robot, leader, prompt: str, arm=None) -> list:
+    """Teleop until Enter. With arm given, also returns the path the follower took (raw counts)."""
     print(prompt)
     done = threading.Event()
     threading.Thread(target=lambda: (sys.stdin.readline(), done.set()), daemon=True).start()
+    path = []
     while not done.is_set():
         t0 = time.monotonic()
         robot.send_action(leader.get_action())
+        if arm is not None:
+            path.append(arm.pos())
         time.sleep(max(0.0, 1 / 30 - (time.monotonic() - t0)))
+    return path
+
+
+def pick_hover(path: list, seat: np.ndarray, near: float):
+    """The pose on your own final approach where the busiest joint was still `near` counts from the seat."""
+    far = [i for i, q in enumerate(path) if np.abs(np.asarray(q) - seat).max() >= near]
+    return None if not far else np.asarray(path[far[-1]], float)
+
+
+def teach(robot, leader, arm, near: float, push_deg: float):
+    """You seat the plug once. Returns hover, seat and the push strength as a fraction of that line."""
+    path = teleop_until_enter(robot, leader, "\nSEAT the plug fully by teleop, coming down from above. Press Enter while it is seated.", arm)
+    seat = arm.pos()
+    hover = pick_hover(path, seat, near)
+    if hover is None:
+        print("The arm never got far enough from the seated pose. Start from higher up and try again.")
+        return None, seat, 0.0
+    line = seat - hover
+    print("hover -> seat, counts per joint:", {m: int(v) for m, v in zip(ARM, line)})
+    if abs(line[4]) > 30:
+        print(f"NOTE: the wrist twisted {abs(line[4]) * 0.088:.0f} degrees over the last stretch. A straight push down seats more reliably.")
+    return hover, seat, push_deg / 0.088 / float(np.abs(line).max())
 
 
 def pull_out(arm, hover, seat, lead: float = 0.3) -> None:
@@ -82,7 +108,8 @@ def main():
     ap.add_argument("--replays", type=int, default=20)
     ap.add_argument("--probe", action="store_true", help="also run G5: pushes from known offsets")
     ap.add_argument("--wiggle", type=float, default=3.0, help="wiggle size in encoder counts for the wiggle runs")
-    ap.add_argument("--lead", type=float, default=1.0, help="push strength: how far the command may run ahead of the arm, as a fraction of the hover-to-seat distance")
+    ap.add_argument("--push", type=float, default=12.0, help="push strength: how many degrees the command may run ahead of the arm on the busiest joint")
+    ap.add_argument("--near", type=float, default=70.0, help="hover is taken where the busiest joint was this many counts from the seat (about 1 cm)")
     ap.add_argument("--spot", default="", help="grid spot number, saved with every push")
     ap.add_argument("--out", default=str(Path(__file__).resolve().parent.parent / "data" / "pushes"))
     ap.add_argument("--rock", type=float, default=40.0, help="wrist rocking size for pull-outs, in encoder counts")
@@ -98,19 +125,8 @@ def main():
     session = Path(a.out) / time.strftime("%Y%m%d-%H%M%S")
 
     try:
-        teleop_until_enter(robot, leader, "\n1/2  Hold the plug about 10 mm straight ABOVE the port. Press Enter.")
-        hover = arm.pos()
-        teleop_until_enter(robot, leader, "2/2  Now SEAT the plug fully. Press Enter while it is seated.")
-        seat = arm.pos()
-        line = seat - hover
-        print("hover -> seat, counts per joint:", dict(zip(ARM, line.astype(int))))
-        if abs(line[4]) > 30:
-            print(f"NOTE: the wrist twisted {abs(line[4]) * 0.088:.0f} degrees between hover and seat. "
-                  "Teach hover with the same twist as the seated pose if you can.")
-        if np.abs(line).max() > 90:
-            print("NOTE: hover looks far from the seat. About 10 mm above the port is enough.")
-        if np.abs(line).max() < 8:
-            print("These two poses are almost the same. Start again with a clearer hover.")
+        hover, seat, a.lead = teach(robot, leader, arm, a.near, a.push)
+        if hover is None:
             return
         session.mkdir(parents=True, exist_ok=True)
         (session / "teach.json").write_text(json.dumps(
