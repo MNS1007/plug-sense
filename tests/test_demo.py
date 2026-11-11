@@ -48,6 +48,7 @@ def test_push_then_pull_on_a_simulated_arm(monkeypatch, tmp_path):
     arm = Arm(bus)
     r = demo.run_push(arm, skill)
     assert r["outcome"] == "seated" and len(r["rows"]) == len(skill.push)
+    assert demo.is_free(arm, skill) is False            # resting at the seated pose: treated as still in
     assert demo.run_pull(arm, skill) is True and skill.away(arm.pos())
     assert demo.run_pull(arm, skill) is True            # already out: nothing replayed
     shift = np.array([6, 0, 0, 0, 0.0])
@@ -62,3 +63,27 @@ def test_pull_out_in_another_direction_counts_as_clear():
     skill = demo.build_skill(down, up, near=45)
     assert not isinstance(skill, str) and skill.away(skill.pull[-1][1])
     assert len(skill.pull) > 20      # the shaking is kept, not cut at the first big swing
+
+
+def test_latched_plug_is_not_called_free(monkeypatch):
+    """Pulled 60 counts off the seated pose under load, but it springs back when the arm stops pulling."""
+    fast(monkeypatch)
+    monkeypatch.setattr(demo.time, "sleep", lambda s: None)
+    down = steps(approach() + [SEAT] * 10)
+    up = steps([SEAT] * 5 + [SEAT + (UP - SEAT) * k / 9 for k in range(10)])
+    skill = demo.build_skill(down, up, near=45)
+
+    class Sprung(FakeBus):
+        def sync_read(self, name, motors, normalize=True):
+            if name == "Present_Position":       # the latch holds the arm within 60 counts of the seat, more only under load
+                pull = np.clip(self.goal - SEAT, -60, 60)
+                relaxed = np.abs(self.goal - self.p).max() < 30
+                self.p = SEAT + (0 if relaxed else pull)
+                return dict(zip(demo.ARM, self.p))
+            return super().sync_read(name, motors, normalize)
+
+    bus = Sprung(SEAT)
+    arm = Arm(bus)
+    arm.write(SEAT + np.array([0, -200, 0, 0, 0.0]))     # pulling hard
+    assert skill.away(arm.pos())                          # bent away under load
+    assert demo.is_free(arm, skill) is False              # but not free

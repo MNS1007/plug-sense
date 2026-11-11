@@ -70,9 +70,9 @@ def cycle(arm, skill, home, folder: Path, name: str, mic, offset=None, extra: di
     else:
         print(f"  {name:<16} {outcome:<7} depth {r['frac']:.2f}  {r['seconds']:.1f} s")
     save_push(folder / name, r, {"offset": None if offset is None else np.asarray(offset).tolist(), **(extra or {})}, mic)
-    if not demo.run_pull(arm, skill, offset):
-        input("  The arm could not pull the plug out. Free it by hand, then press Enter.")
-        arm.sync_goal()
+    while not demo.run_pull(arm, skill, offset):
+        arm.sync_goal()  # stop pulling while you work on it
+        input("  The plug is still in the port. Pull it out by hand, then press Enter.")
     return outcome
 
 
@@ -95,7 +95,7 @@ def main():
     arm = Arm.from_robot(robot)
     mic = Mic(int(a.mic_device) if a.mic_device and a.mic_device.isdigit() else a.mic_device) if a.mic_device else None
     session = Path(a.out) / time.strftime("%Y%m%d-%H%M%S")
-    home = None
+    home = skill = None
     try:
         home = demo.get_home(robot, leader, arm)
         skill = demo.teach(robot, leader, arm, home, a.near, a.lead_in)
@@ -129,9 +129,12 @@ def main():
         print("\nstopped")
     finally:
         try:
+            arm.sync_goal()  # stop pushing or pulling
             if home is not None and input("\nReturn to the start pose first? [Y/n] ").strip().lower() != "n":
-                arm.sync_goal()
-                arm.goto(home, speed=250.0)
+                while skill is not None and not demo.is_free(arm, skill):
+                    arm.sync_goal()
+                    input("The plug is still in the port, so the arm will not move away. Pull it out by hand, then press Enter.")
+                arm.goto(home, speed=200.0)
             input("HOLD THE FOLLOWER ARM with your hand, then press Enter. The motors will let go.")
         except (EOFError, KeyboardInterrupt):
             pass

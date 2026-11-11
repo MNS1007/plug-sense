@@ -28,6 +28,7 @@ class FakeBus:
 
     def sync_write(self, name, values, normalize=True):
         self.goal = np.array([values[m] for m in ARM], float)
+        self.p += 0.5 * (self.goal - self.p)   # the servos keep moving between reads
 
 
 HOVER = np.array([2000, 2000, 2000, 2000, 2000], float)

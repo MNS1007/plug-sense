@@ -156,12 +156,30 @@ def run_push(arm: Arm, skill: Skill, shift=None, hold: float = 0.4, seated_at: f
             "t_start": t_start, "rows": rows}
 
 
-def run_pull(arm: Arm, skill: Skill, shift=None, tries: int = 2) -> bool:
-    """Repeat your pull-out until the plug is clear. Does nothing if it is not in."""
+def is_free(arm: Arm, skill: Skill, shift=None) -> bool:
+    """Is the plug out of the port? Tested with the motors relaxed, then with a gentle lift.
+
+    A latched plug can be bent a few degrees away from the seated pose while the arm pulls on
+    it, so the pose under load proves nothing. The arm first stops pulling: if it settles back
+    near the seated pose, the plug is still in. Then it lifts 20 counts with very little force:
+    a free arm follows, a latched one does not.
+    """
     off = np.zeros(len(ARM)) if shift is None else np.asarray(shift, float)
+    arm.sync_goal()
+    time.sleep(0.3)
+    arm.sync_goal()
+    start = arm.pos()
+    if not skill.away(start - off):
+        return False
+    up = -np.append(skill.line, 0.0) / np.abs(skill.line).max() * 20.0
+    arm.goto(start + up, speed=100.0, settle=0.3)
+    return float((arm.pos() - start) @ up / (up @ up)) >= 0.5
+
+
+def run_pull(arm: Arm, skill: Skill, shift=None, tries: int = 2) -> bool:
+    """Repeat your pull-out until the plug is out. Returns False if it is still in after the last try."""
     for _ in range(tries + 1):
-        if skill.away(arm.pos() - off):
+        if is_free(arm, skill, shift):
             return True
         arm.replay(skill.pull, shift)
-        time.sleep(0.2)
-    return skill.away(arm.pos() - off)
+    return is_free(arm, skill, shift)
