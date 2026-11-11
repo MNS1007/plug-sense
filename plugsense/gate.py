@@ -1,133 +1,38 @@
-"""Gate tests G4 and G5: can this arm reseat the plug on its own, and from how far off?
+"""Gate tests G4 and G5: can this arm repeat your plug-in on its own, and from how far off?
 
-  python -m plugsense.gate --mic-device 1                 # G4: 20 replays from the taught pose
-  python -m plugsense.gate --mic-device 1 --probe         # G4, then G5: pushes from known offsets
+  python -m plugsense.gate --mic-device 1 --replays 3      # short first try
+  python -m plugsense.gate --mic-device 1 --probe          # 20 replays, then pushes from known offsets
 
-You seat the plug once by teleop, coming down from above, then pull it out once the way
-that works. The hover pose is taken from your approach, and the arm repeats your
-pull-out after every push. The arm then works alone. KEEP ONE HAND NEAR THE POWER SWITCH.
-At the end it waits for you to hold the arm before it lets go.
+The follower goes to the start pose. You bring the leader to match, then plug in (Enter)
+and pull out (Enter) once. After that the arm works alone: for every replay it returns to
+the start pose, repeats the last stretch of your push, checks whether it reached the pose
+where you had the plug seated, and repeats your pull-out.
 
-Every push is saved under data/pushes/ with servo positions, loads and contact audio.
-The G5 pushes carry the offset they started from, which is the training label for
-the network that tells which way a jam was off.
+KEEP A HAND NEAR THE POWER SWITCH. At the end it waits for you to hold the arm.
+Every push is saved under data/pushes/ with commands, servo positions, loads and audio.
 """
 from __future__ import annotations
 
 import argparse
 import csv
 import json
-import sys
-import threading
+import logging
 import time
 import wave
 from pathlib import Path
-
-import logging
 
 import numpy as np
 
 from lerobot.robots.so_follower import SO101Follower, SO101FollowerConfig
 from lerobot.teleoperators.so_leader import SO101Leader, SO101LeaderConfig
 
+from plugsense import demo
 from plugsense.arm import ARM, ELBOW, PAN, Arm
 from plugsense.attempt_log import FOLLOWER_PORT, LEADER_PORT, RATE, Mic
 
 logging.getLogger("lerobot.robots.utils").setLevel(logging.ERROR)  # hide the per-step clamp warnings during teleop
 
 STEPS = [1, 2, 4, 6]
-
-
-def record_commands(robot, leader, arm, prompt: str, max_seconds: float = 25.0) -> list:
-    """Teleop until Enter. Returns (seconds, commanded goal, measured pose) per step, without the still part at the start."""
-    print(prompt)
-    done = threading.Event()
-    threading.Thread(target=lambda: (sys.stdin.readline(), done.set()), daemon=True).start()
-    demo, t_start = [], time.monotonic()
-    while not done.is_set():
-        t0 = time.monotonic()
-        robot.send_action(leader.get_action())
-        demo.append((t0 - t_start, arm.commanded(), arm.pos()))
-        time.sleep(max(0.0, 1 / 30 - (time.monotonic() - t0)))
-    moving = next((i for i, d in enumerate(demo) if np.abs(d[1] - demo[0][1]).max() > 3), 0)
-    demo = demo[max(0, moving - 3):]
-    return [(t - demo[0][0], q, p) for t, q, p in demo if t - demo[0][0] <= max_seconds]
-
-
-def teleop_until_enter(robot, leader, prompt: str, arm=None) -> list:
-    """Teleop until Enter. With arm given, also returns the path the follower took (raw counts)."""
-    print(prompt)
-    done = threading.Event()
-    threading.Thread(target=lambda: (sys.stdin.readline(), done.set()), daemon=True).start()
-    path = []
-    while not done.is_set():
-        t0 = time.monotonic()
-        robot.send_action(leader.get_action())
-        if arm is not None:
-            path.append(arm.pos())
-        time.sleep(max(0.0, 1 / 30 - (time.monotonic() - t0)))
-    return path
-
-
-def pick_hover(path: list, seat: np.ndarray, near: float):
-    """The pose on your own final approach where the busiest joint was still `near` counts from the seat."""
-    # The wrist twist (last joint) is left out: people twist the plug while seating it, and that is not travel.
-    far = [i for i, q in enumerate(path) if np.abs(np.asarray(q) - seat)[:4].max() >= near]
-    if not far:
-        return None
-    hover = np.asarray(path[far[-1]], float).copy()
-    hover[4] = seat[4]  # approach and push with the twist the plug had when seated
-    return hover
-
-
-def teach(robot, leader, arm, near: float, push_deg: float):
-    """You seat the plug once, then pull it out once. Returns hover, seat, push strength and your pull-out."""
-    path = teleop_until_enter(robot, leader, "\nSEAT the plug fully by teleop, coming down from above. Press Enter while it is seated.", arm)
-    seat = arm.pos()
-    hover = pick_hover(path, seat, near)
-    if hover is None:
-        print("The arm never got far enough from the seated pose. Start from higher up and try again.")
-        return None, seat, 0.0, None
-    line = seat - hover
-    print("hover -> seat, counts per joint:", {m: int(v) for m, v in zip(ARM, line)})
-    demo = record_commands(robot, leader, arm, "Now PULL THE PLUG OUT by teleop, the way that works for you. "
-                                               "Press Enter once it is out and above the port.")
-    def depth(p):
-        return float((p - hover)[:4] @ line[:4] / (line[:4] @ line[:4]))
-
-    out = next((i for i, d in enumerate(demo) if depth(d[2]) <= -0.2), None)
-    if out is None:
-        print("The plug never came clear of the port in that pull-out. Pull it out and up, then press Enter. Starting again.")
-        return None, seat, 0.0, None
-    demo = [(t, q) for t, q, _ in demo[:out + 4]]  # stop at the moment the plug is clear; what you did after is dropped
-    print(f"pull-out demo: {demo[-1][0]:.1f} s kept")
-    return hover, seat, push_deg / 0.088 / float(np.abs(line[:4]).max()), demo
-
-
-def is_out(arm, hover, seat) -> bool:
-    line = seat - hover
-    return float((arm.pos() - hover)[:4] @ line[:4] / (line[:4] @ line[:4])) <= 0.3
-
-
-def pull_out(arm, hover, seat, lead: float = 0.3, demo: list | None = None, shift=None) -> None:
-    """Pull the plug out, by repeating your demonstrated pull-out if there is one. Asks for a hand if it stays in."""
-    for _ in range(2):
-        if is_out(arm, hover, seat):  # the push never went in, or the plug is already clear: nothing to pull
-            arm.sync_goal()
-            arm.goto(hover - 0.6 * (seat - hover), speed=250.0, settle=0.2)
-            return
-        if demo:
-            arm.replay(demo, shift)
-            ok = is_out(arm, hover, seat)
-        else:
-            ok = arm.retract(hover, seat, lead_max=lead)
-        if ok:
-            arm.sync_goal()
-            arm.goto(hover - 0.6 * (seat - hover), speed=250.0, settle=0.2)
-            return
-    input("  The arm could not pull the plug out. Free it by hand, then press Enter.")
-    arm.sync_goal()
-    arm.goto(hover - 0.6 * (seat - hover), speed=200.0)
 
 
 def save_push(folder: Path, result: dict, meta: dict, mic) -> None:
@@ -150,18 +55,27 @@ def save_push(folder: Path, result: dict, meta: dict, mic) -> None:
     (folder / "meta.json").write_text(json.dumps(meta, indent=2))
 
 
+def cycle(arm, skill, home, folder: Path, name: str, mic, offset=None, extra: dict | None = None) -> str:
+    """One full attempt: start pose, your push, save, your pull-out."""
+    arm.goto(home, speed=300.0)
+    r = demo.run_push(arm, skill, offset)
+    outcome = r["outcome"]
+    print(f"  {name:<16} {outcome:<7} depth {r['frac']:.2f}  {r['seconds']:.1f} s")
+    save_push(folder / name, r, {"offset": None if offset is None else np.asarray(offset).tolist(), **(extra or {})}, mic)
+    if not demo.run_pull(arm, skill, offset):
+        input("  The arm could not pull the plug out. Free it by hand, then press Enter.")
+        arm.sync_goal()
+    return outcome
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mic-device", default=None)
     ap.add_argument("--replays", type=int, default=20)
     ap.add_argument("--probe", action="store_true", help="also run G5: pushes from known offsets")
-    ap.add_argument("--wiggle", type=float, default=3.0, help="wiggle size in encoder counts for the wiggle runs")
-    ap.add_argument("--push", type=float, default=12.0, help="push strength: how many degrees the command may run ahead of the arm on the busiest joint")
-    ap.add_argument("--pull", type=float, default=20.0, help="pull-out strength, in degrees, like --push")
-    ap.add_argument("--near", type=float, default=45.0, help="hover is taken where the busiest joint (wrist twist excluded) was this many counts from the seat, roughly 8 mm")
-    ap.add_argument("--spot", default="", help="grid spot number, saved with every push")
+    ap.add_argument("--near", type=float, default=45.0, help="the push starts where the busiest joint (twist excluded) was this many counts from the seat, roughly 8 mm")
+    ap.add_argument("--spot", default="", help="saved with every push")
     ap.add_argument("--out", default=str(Path(__file__).resolve().parent.parent / "data" / "pushes"))
-    ap.add_argument("--rock", type=float, default=40.0, help="wrist rocking size for pull-outs, in encoder counts")
     a = ap.parse_args()
 
     robot = SO101Follower(SO101FollowerConfig(port=FOLLOWER_PORT, id="follower", max_relative_target=10.0))
@@ -169,61 +83,46 @@ def main():
     robot.connect()
     leader.connect()
     arm = Arm.from_robot(robot)
-    arm.rock = a.rock
     mic = Mic(int(a.mic_device) if a.mic_device and a.mic_device.isdigit() else a.mic_device) if a.mic_device else None
     session = Path(a.out) / time.strftime("%Y%m%d-%H%M%S")
-
+    home = None
     try:
-        hover, seat, a.lead, demo = teach(robot, leader, arm, a.near, a.push)
-        if hover is None:
+        home = demo.get_home(robot, leader, arm)
+        skill = demo.teach(robot, leader, arm, home, a.near)
+        if skill is None:
             return
-        a.pull_lead = a.lead * a.pull / a.push
         session.mkdir(parents=True, exist_ok=True)
-        (session / "teach.json").write_text(json.dumps(
-            {"motors": ARM, "hover": hover.tolist(), "seat": seat.tolist(), "spot": a.spot}, indent=2))
-
-        (session / "pull_demo.json").write_text(json.dumps([[t, q.tolist()] for t, q in demo]))
-        input("\nLower the leader arm onto the desk. The follower now moves by itself. Press Enter to start.")
+        skill.save(session / "skill.json")
+        input("\nLower the leader arm onto the desk. The follower now works alone. Press Enter to start.")
         arm.sync_goal()
-        arm.goto(hover - 0.6 * (seat - hover), speed=250.0)
 
-        def push(name: str, offset=None, wiggle=0.0) -> str:
-            arm.approach(hover + (0 if offset is None else offset), seat + (0 if offset is None else offset))
-            r = arm.descend(hover, seat, offset=offset, wiggle=wiggle, lead_max=a.lead)
-            meta = {"spot": a.spot, "offset": None if offset is None else offset.tolist(), "wiggle": wiggle,
-                    "hover": hover.tolist(), "seat": seat.tolist(), "lead": a.lead}
-            outcome = r["outcome"]
-            print(f"  {name:<22} {outcome:<7} depth {r['frac']:.2f}  {r['seconds']:.1f} s")
-            save_push(session / name, r, meta, mic)
-            pull_out(arm, hover, seat, a.pull_lead, demo, offset)
-            return outcome
-
-        print(f"\nG4: {a.replays} replays from the taught pose")
-        g4 = [push(f"g4-{i:02d}") for i in range(a.replays)]
+        print(f"\nG4: {a.replays} replays of your push")
+        g4 = [cycle(arm, skill, home, session, f"g4-{i:02d}", mic, extra={"spot": a.spot}) for i in range(a.replays)]
         seated = g4.count("seated")
         print(f"G4 result: {seated} of {a.replays} seated  ->  {'PASS' if seated * 2 >= a.replays else 'FAIL'} (pass is half or more)")
 
         if a.probe:
-            print("\nG5: pushes from known offsets (pan = sideways, elbow = toward/away)")
-            tally: dict[str, list[str]] = {}
+            print("\nG5: your push started from known offsets (pan = sideways, elbow = toward/away)")
+            tally: dict[int, list[str]] = {}
             for joint, jname in ((PAN, "pan"), (ELBOW, "elbow")):
                 for step in STEPS:
                     for sign in (+1, -1):
                         off = np.zeros(len(ARM))
                         off[joint] = sign * step
-                        for wig in (0.0, a.wiggle):
-                            key = f"{step} counts, {'wiggle' if wig else 'straight'}"
-                            name = f"g5-{jname}{sign * step:+d}-{'w' if wig else 's'}"
-                            tally.setdefault(key, []).append(push(name, off, wig))
+                        tally.setdefault(step, []).append(
+                            cycle(arm, skill, home, session, f"g5-{jname}{sign * step:+d}", mic, off, {"spot": a.spot}))
             print("\nG5 result (seated out of 4 pushes at each offset size):")
-            for key, outs in tally.items():
-                print(f"  {key:<22} {outs.count('seated')} of {len(outs)}")
+            for step, outs in tally.items():
+                print(f"  {step} counts off     {outs.count('seated')} of {len(outs)}")
         print(f"\nsaved under {session}")
     except KeyboardInterrupt:
         print("\nstopped")
     finally:
         try:
-            input("\nHOLD THE ARM with your hand, then press Enter. The motors will let go.")
+            if home is not None and input("\nReturn to the start pose first? [Y/n] ").strip().lower() != "n":
+                arm.sync_goal()
+                arm.goto(home, speed=250.0)
+            input("HOLD THE FOLLOWER ARM with your hand, then press Enter. The motors will let go.")
         except (EOFError, KeyboardInterrupt):
             pass
         if mic:
