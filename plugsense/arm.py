@@ -145,8 +145,32 @@ class Arm:
         return {"outcome": outcome, "frac": round(final, 3), "seconds": round(time.monotonic() - t_start, 2),
                 "t_start": t_start, "rows": rows}
 
-    def retract(self, hover: np.ndarray, seat: np.ndarray, speed: float = 150.0) -> None:
-        """Pull out slowly along the insertion line, to a point above hover."""
+    def retract(self, hover: np.ndarray, seat: np.ndarray, seconds: float = 1.5, lead_max: float = 0.40,
+                rock: float = 5.0, rock_hz: float = 3.0, timeout: float = 10.0, to: float = -0.6) -> bool:
+        """Pull out along the insertion line to a point above hover. Returns False if the plug stayed stuck.
+
+        The commanded point never runs more than lead_max ahead of the measured one. Whenever the
+        arm is held back at that cap (the latch is holding), it rocks in a small circle on pan and
+        elbow, which releases a USB-C latch with far less force than a straight pull.
+        """
         hover, seat = np.asarray(hover, float), np.asarray(seat, float)
-        self.sync_goal()
-        self.goto(hover - 0.6 * (seat - hover), speed, settle=0.2)
+        line = seat - hover
+        length2 = float(line @ line)
+        p0 = self.pos()
+        f0 = float((p0 - hover) @ line / length2)
+        side = p0 - hover - f0 * line  # keep whatever sideways offset the arm has now
+        g, t_start = f0, time.monotonic()
+        while (now := time.monotonic()) - t_start < timeout:
+            f = float((self.pos() - hover - side) @ line / length2)
+            if f <= to + 0.05:
+                self.goto(hover + side + to * line, speed=200.0, settle=0.2)
+                return True
+            g = max(g - (f0 - to) / (seconds * HZ), to, f - lead_max)
+            cmd = hover + side + g * line
+            if rock and f - g >= 0.9 * lead_max:
+                ph = 2 * math.pi * rock_hz * (now - t_start)
+                cmd[PAN] += rock * math.sin(ph)
+                cmd[ELBOW] += rock * math.cos(ph)
+            self.write(cmd)
+            time.sleep(max(0.0, 1.0 / HZ - (time.monotonic() - now)))
+        return False

@@ -34,7 +34,7 @@ from lerobot.teleoperators.so_leader import SO101Leader, SO101LeaderConfig
 from plugsense.arm import ARM, ELBOW, LIFT, PAN, Arm
 from plugsense.attempt_log import FOLLOWER_PORT, LEADER_PORT, Mic
 from plugsense.cameras import Camera
-from plugsense.gate import save_push, teleop_until_enter
+from plugsense.gate import pull_out, save_push, teleop_until_enter
 
 HELD_OUT = {4, 8, 15, 17, 23, 26}
 ROOT = Path(__file__).resolve().parent.parent / "data"
@@ -69,7 +69,7 @@ def collect_spot(arm, cams, mic, spot: int, hover, seat, home, a, rng) -> dict:
     folder = ROOT / "collect" / f"{time.strftime('%Y%m%d-%H%M%S')}-spot{spot:02d}"
     (folder / "img").mkdir(parents=True, exist_ok=True)
     line = seat - hover
-    arm.retract(hover, seat)
+    pull_out(arm, hover, seat)
 
     rows = []
     for i, (off, t) in enumerate(sample_offsets(n, a.lateral, rng)):
@@ -99,7 +99,7 @@ def collect_spot(arm, cams, mic, spot: int, hover, seat, home, a, rng) -> dict:
         cams["front"].save(folder / f"{name}_front_after.jpg")
         save_push(folder / "pushes" / name, r, {"spot": spot, "offset": None if offset is None else offset.tolist(),
                                               "hover": hover.tolist(), "seat": seat.tolist(), "lead": a.lead}, mic)
-        arm.retract(hover, seat)
+        pull_out(arm, hover, seat)
         time.sleep(a.dark_wait if outcome == "seated" else 0.2)
         return outcome
 

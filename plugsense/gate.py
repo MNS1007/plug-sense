@@ -43,6 +43,15 @@ def teleop_until_enter(robot, leader, prompt: str) -> None:
         time.sleep(max(0.0, 1 / 30 - (time.monotonic() - t0)))
 
 
+def pull_out(arm, hover, seat) -> None:
+    """Pull the plug out; if it stays stuck, wait for a hand and carry on from above the port."""
+    if arm.retract(hover, seat):
+        return
+    input("  The arm could not pull the plug out. Free it by hand, then press Enter.")
+    arm.sync_goal()
+    arm.goto(hover - 0.6 * (seat - hover), speed=200.0)
+
+
 def save_push(folder: Path, result: dict, meta: dict, mic) -> None:
     folder.mkdir(parents=True, exist_ok=True)
     rows = result.pop("rows")
@@ -97,7 +106,7 @@ def main():
             {"motors": ARM, "hover": hover.tolist(), "seat": seat.tolist(), "spot": a.spot}, indent=2))
 
         input("\nLet go of the leader arm. The follower now moves by itself. Press Enter to start.")
-        arm.retract(hover, seat)
+        pull_out(arm, hover, seat)
 
         def push(name: str, offset=None, wiggle=0.0) -> str:
             arm.approach(hover + (0 if offset is None else offset), seat + (0 if offset is None else offset))
@@ -107,7 +116,7 @@ def main():
             outcome = r["outcome"]
             print(f"  {name:<22} {outcome:<7} depth {r['frac']:.2f}  {r['seconds']:.1f} s")
             save_push(session / name, r, meta, mic)
-            arm.retract(hover, seat)
+            pull_out(arm, hover, seat)
             return outcome
 
         print(f"\nG4: {a.replays} replays from the taught pose")

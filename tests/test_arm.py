@@ -78,3 +78,42 @@ def test_descent_missed(monkeypatch):
 def test_push_is_capped(monkeypatch):
     r = run_descent(monkeypatch, wall=0.4)
     assert max(row["goal_frac"] - row["frac"] for row in r["rows"]) <= 0.30 + 1e-6
+
+
+class LatchBus(FakeBus):
+    """Holds the plug at the seat until it has been rocked sideways a few times."""
+
+    def __init__(self, *a, need=4, **k):
+        super().__init__(*a, **k)
+        self.need, self.swings, self.last = need, 0, 0
+
+    def sync_write(self, name, values, normalize=True):
+        super().sync_write(name, values, normalize)
+        side = np.sign(round(self.goal[0] - HOVER[0]))
+        if side and side != self.last:
+            self.swings, self.last = self.swings + 1, side
+
+    def sync_read(self, name, motors, normalize=True):
+        if name == "Present_Position" and self.swings < self.need:
+            return dict(zip(ARM, SEAT))
+        return super().sync_read(name, motors, normalize)
+
+
+def test_retract_free(monkeypatch):
+    fast(monkeypatch)
+    a = Arm(FakeBus(SEAT, HOVER, SEAT))
+    assert a.retract(HOVER, SEAT) is True
+    assert np.allclose(a.goal, HOVER - 0.6 * (SEAT - HOVER), atol=1)
+
+
+def test_retract_rocks_a_latched_plug_free(monkeypatch):
+    fast(monkeypatch)
+    bus = LatchBus(SEAT, HOVER, SEAT)
+    a = Arm(bus)
+    assert a.retract(HOVER, SEAT) is True and bus.swings >= 4
+
+
+def test_retract_reports_stuck(monkeypatch):
+    fast(monkeypatch)
+    a = Arm(LatchBus(SEAT, HOVER, SEAT, need=10**9))
+    assert a.retract(HOVER, SEAT, timeout=3.0) is False
