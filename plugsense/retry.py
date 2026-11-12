@@ -29,7 +29,7 @@ from plugsense.arm import ARM, ELBOW, PAN
 logging.getLogger("lerobot.robots.utils").setLevel(logging.ERROR)
 
 ROOT = Path(__file__).resolve().parent.parent / "data"
-LAST_SKILL = ROOT / "skill_last.json"
+LAST_TAUGHT = ROOT / "taught_last.json"
 JOINT = {"pan": PAN, "elbow": ELBOW}
 
 
@@ -125,14 +125,21 @@ def main():
     trials = []
     try:
         home = demo.get_home(robot, leader, arm)
-        if a.reuse and LAST_SKILL.exists():
-            skill = demo.Skill.load(LAST_SKILL)
+        if a.reuse and LAST_TAUGHT.exists():
+            raw = json.loads(LAST_TAUGHT.read_text())  # your last demonstration, cut again with the current rules
+            unpack = lambda rows: [(t, np.array(c, float), np.array(p, float)) for t, c, p in rows]
+            skill = demo.build_skill(unpack(raw["down"]), unpack(raw["up"]), a.near)
+            if isinstance(skill, str):
+                print(skill)
+                return
+            skill.taught = {"down": unpack(raw["down"]), "up": unpack(raw["up"])}
+            print(f"reusing your last demonstration: plug-in {skill.push[-1][0]:.1f} s, pull-out {skill.pull[-1][0]:.1f} s")
             arm.sync_goal()
         else:
             skill = demo.teach(robot, leader, arm, home, a.near)
             if skill is None:
                 return
-            skill.save(LAST_SKILL)
+            demo.save_taught(skill, LAST_TAUGHT)
             input("\nLower the leader arm onto the desk. The follower now works alone. Press Enter to start.")
             arm.sync_goal()
         session.mkdir(parents=True, exist_ok=True)

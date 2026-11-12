@@ -121,9 +121,11 @@ def build_skill(down: list, up: list, near: float = 45.0, lead_in: float = 60.0)
     away = [skill.away(s[2]) for s in up]
     if not away[-1]:
         return "At the end of the pull-out the arm was still at the seated pose. Pull the plug out and move it away before pressing Enter."
-    last_close = max((i for i, a in enumerate(away) if not a), default=0)  # after this step the arm stayed away for good
     moving = next((i for i, s in enumerate(up) if np.abs(s[1] - up[0][1]).max() > 3), 0)
-    cut = up[max(0, moving - 3):last_close + 15]
+    last_move = max((i for i, s in enumerate(up) if np.abs(s[1] - up[-1][1]).max() > 3), default=len(up) - 1)
+    # The whole pull-out is kept, up to where you stopped moving. Cutting it soon after the arm left the
+    # seated pose stopped the replay in the middle of the stroke, with the plug still latched.
+    cut = up[max(0, moving - 3):last_move + 6]
     skill.pull = [(t - cut[0][0], q) for t, q, _ in cut]
     return skill
 
@@ -166,26 +168,36 @@ def run_push(arm: Arm, skill: Skill, shift=None, hold: float = 0.4, seated_at: f
 
 
 def is_free(arm: Arm, skill: Skill, shift=None, told_out: bool = False, say: bool = False) -> bool:
-    """Is the plug out of the port? Judged with the motors relaxed.
+    """Is the plug out of the port? Tested with the motors relaxed, then with a gentle lift.
 
-    A latched plug can be bent a few degrees away from the seated pose while the arm pulls on
-    it, so the pose under load proves nothing. The arm stops pulling twice, half a second apart:
-    a latched plug springs it back near the seated pose, a free arm stays where it is.
-    (An earlier version also tried a 20-count lift; the servos do not reliably follow so small
-    a step against gravity, so it called a free arm stuck.)
+    A latched plug can be bent far from the seated pose while the arm pulls on it (220 counts
+    was measured with the plug still in), so the pose under load proves nothing. The arm first
+    stops pulling: if it settles back near the seated pose, the plug is still in. Then it lifts
+    20 counts with very little force: a free arm follows, a latched one does not.
 
-    told_out: you have said the plug is out, which is trusted even just above the port.
+    told_out: you have said the plug is out, which is trusted.
     """
     off = np.zeros(len(ARM)) if shift is None else np.asarray(shift, float)
     arm.relax()
     time.sleep(0.3)
     arm.relax()
     time.sleep(0.2)
-    gap = float(np.abs(arm.pos() - off - skill.seat)[:4].max())
-    free = told_out or gap >= skill.near
+    start = arm.pos()
+    gap = float(np.abs(start - off - skill.seat)[:4].max())
+    if told_out:
+        if say:
+            print(f"    check: you said the plug is out ({gap:.0f} counts from the seated pose)")
+        return True
+    if gap < skill.near:
+        if say:
+            print(f"    check: relaxed arm is only {gap:.0f} counts from the seated pose (out needs {skill.near:.0f})")
+        return False
+    up = -np.append(skill.line, 0.0) / np.abs(skill.line).max() * 20.0
+    arm.goto(start + up, speed=100.0, settle=0.3)
+    followed = float((arm.pos() - start) @ up / (up @ up))
     if say:
-        print(f"    check: relaxed arm is {gap:.0f} counts from the seated pose (out needs {skill.near:.0f})" + (", you said it is out" if told_out else ""))
-    return free
+        print(f"    check: {gap:.0f} counts from the seated pose, gentle lift followed {followed:.0%}")
+    return followed >= 0.5
 
 
 def run_pull(arm: Arm, skill: Skill, shift=None, tries: int = 2) -> bool:
