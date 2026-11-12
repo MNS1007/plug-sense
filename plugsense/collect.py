@@ -48,7 +48,7 @@ def sample_offsets(n: int, lateral: float, rng) -> list[tuple[np.ndarray, float]
         off[PAN] = rng.uniform(-lateral, lateral)
         off[ELBOW] = rng.uniform(-lateral, lateral)
         off[LIFT] = rng.uniform(-lateral / 3, lateral / 3)
-        out.append((np.round(off), float(rng.uniform(-0.5, 0.3))))  # -0.5 = higher than the push start, 0.3 = lower
+        out.append((np.round(off), float(rng.uniform(-0.6, 0.0))))  # only at or above the push start, so an offset pose cannot touch the power bank
     return out
 
 
@@ -95,7 +95,7 @@ def collect_session(arm, cams, mic, session: int, skill, home, a, rng) -> dict:
             time.sleep(0.8)  # the display takes a moment to turn red
             cams["front"].save(folder / f"{name}_front_after.jpg")
 
-        outcome = cycle(arm, skill, home, folder / "pushes", name, mic, offset, {"session": session}, after_push=snap)
+        outcome = cycle(arm, skill, home, folder / "pushes", name, mic, offset, {"session": session}, ask=a.ask, after_push=snap)
         time.sleep(a.dark_wait if outcome == "seated" else 0.2)
         return outcome
 
@@ -107,7 +107,7 @@ def collect_session(arm, cams, mic, session: int, skill, home, a, rng) -> dict:
             pushes[name] = push(name, off)
     check = push("check")
     if check != "seated":
-        print("  check push did not seat: the power bank may have moved; redo this session")
+        print("  check push did not seat (blind pushes miss about half the time; the photos are still used)")
 
     arm.goto(home, speed=a.speed)
     time.sleep(0.3)
@@ -130,6 +130,7 @@ def main():
     ap.add_argument("--speed", type=float, default=400.0)
     ap.add_argument("--near", type=float, default=45.0)
     ap.add_argument("--dark-wait", type=float, default=11.0, help="seconds to wait after a seated push so the display goes dark")
+    ap.add_argument("--no-ask", dest="ask", action="store_false", help="do not ask whether the display is lit; use the arm's depth instead (unreliable)")
     ap.add_argument("--seed", type=int, default=None)
     a = ap.parse_args()
     rng = np.random.default_rng(a.seed)

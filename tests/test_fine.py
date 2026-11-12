@@ -41,12 +41,3 @@ def test_learns_offset_on_unseen_spots(tmp_path):
     assert held["n"] == 20
     # offsets span +-24 counts; guessing zero gives a mean error near 12 on the two moving joints
     assert held["mean_abs_counts"]["shoulder_pan"] < 6 and held["mean_abs_counts"]["elbow_flex"] < 6
-
-
-def test_failed_check_spot_is_skipped(tmp_path):
-    rng = np.random.default_rng(1)
-    make_spot(tmp_path, 1, False, 3, rng)
-    meta = json.loads((tmp_path / "t-spot01/meta.json").read_text())
-    meta["check"] = "jammed"
-    (tmp_path / "t-spot01/meta.json").write_text(json.dumps(meta))
-    assert fine.load_spots(tmp_path) == []

@@ -1,10 +1,12 @@
-"""Fine alignment network: wrist image + joint positions -> joint offset to the hover pose.
+"""Fine alignment network: wrist image -> joint offset to the hover pose.
 
   python -m plugsense.fine train                 # train on data/collect, test on the held-out spots
   python -m plugsense.fine train --epochs 30
 
 Labels come from self-collection (plugsense.collect): every photo was taken at a known
 joint offset from the hover pose that seated the plug. Offsets are in encoder counts.
+The joint angles are deliberately NOT an input: at one taped location the offset could be
+computed from them alone, and the network would never need to look at the port.
 The network has several output heads; how much they disagree is used later to decide
 between moving and looking again.
 """
@@ -27,21 +29,17 @@ from plugsense.arm import ARM
 ROOT = Path(__file__).resolve().parent.parent
 SIZE = 224
 OUT_SCALE = 30.0   # counts; offsets are divided by this for the loss
-POS_SCALE = 300.0  # counts; joint positions are centred and divided by this
 MEAN = np.array([0.485, 0.456, 0.406], np.float32)
 STD = np.array([0.229, 0.224, 0.225], np.float32)
 
 
 def load_spots(folder: Path) -> list[dict]:
-    """One entry per collected spot, with its samples. Spots whose check push failed are skipped."""
+    """One entry per collected session, with its samples."""
     spots = []
     for d in sorted(folder.glob("*-spot*")):
         if not (d / "meta.json").exists() or not (d / "samples.csv").exists():
             continue
         meta = json.loads((d / "meta.json").read_text())
-        if meta.get("check") not in (None, "seated"):
-            print(f"skipping {d.name}: check push was '{meta['check']}'")
-            continue
         hover = np.array(meta["hover"], np.float32)
         rows = []
         with open(d / "samples.csv") as f:
@@ -87,12 +85,11 @@ class Samples(torch.utils.data.Dataset):
         if self.train:
             img = augment(img, self.rng)
         img = torch.from_numpy(((img - MEAN) / STD).transpose(2, 0, 1).astype(np.float32))
-        pos = torch.from_numpy((r["pos"] - self.centre) / POS_SCALE)
-        return img, pos, torch.from_numpy(r["target"] / OUT_SCALE)
+        return img, torch.from_numpy(r["target"] / OUT_SCALE)
 
 
 class FineNet(nn.Module):
-    """ResNet-18 features kept as a grid, reduced to image coordinates of 32 learned points, plus joints."""
+    """ResNet-18 features kept as a grid, reduced to image coordinates of 32 learned points."""
 
     def __init__(self, heads: int = 5, pretrained: bool = True):
         super().__init__()
@@ -100,19 +97,17 @@ class FineNet(nn.Module):
         net = torchvision.models.resnet18(weights=weights)
         self.trunk = nn.Sequential(*list(net.children())[:-3])  # stride 16: a 14 x 14 grid at 224 px
         self.points = nn.Conv2d(256, 32, 1)
-        self.pos = nn.Sequential(nn.Linear(len(ARM), 32), nn.ReLU())
         self.heads = nn.ModuleList(
-            nn.Sequential(nn.Linear(64 + 32, 128), nn.ReLU(), nn.Linear(128, len(ARM))) for _ in range(heads))
+            nn.Sequential(nn.Linear(64, 128), nn.ReLU(), nn.Linear(128, len(ARM))) for _ in range(heads))
 
-    def forward(self, img, pos):
+    def forward(self, img):
         f = self.points(self.trunk(img))
         b, c, h, w = f.shape
         p = F.softmax(f.view(b, c, -1), dim=-1).view(b, c, h, w)
         ys = torch.linspace(-1, 1, h, device=f.device)
         xs = torch.linspace(-1, 1, w, device=f.device)
         xy = torch.cat([(p.sum(2) * xs).sum(-1), (p.sum(3) * ys).sum(-1)], dim=1)  # expected x and y of each point
-        z = torch.cat([xy, self.pos(pos)], dim=1)
-        return torch.stack([head(z) for head in self.heads], dim=1)  # batch, heads, joints
+        return torch.stack([head(xy) for head in self.heads], dim=1)  # batch, heads, joints
 
 
 def device():
@@ -123,8 +118,8 @@ def evaluate(model, loader, dev) -> dict:
     model.eval()
     errs, spreads = [], []
     with torch.no_grad():
-        for img, pos, tgt in loader:
-            out = model(img.to(dev), pos.to(dev)).cpu()
+        for img, tgt in loader:
+            out = model(img.to(dev)).cpu()
             errs.append((out.mean(1) - tgt).abs() * OUT_SCALE)
             spreads.append(out.std(1) * OUT_SCALE)
     if not errs:
@@ -154,8 +149,8 @@ def train(folder: Path, out_dir: Path, epochs: int, batch: int, lr: float, pretr
     for ep in range(epochs):
         model.train()
         total = 0.0
-        for img, pos, tgt in loader:
-            out = model(img.to(dev), pos.to(dev))
+        for img, tgt in loader:
+            out = model(img.to(dev))
             loss = (out - tgt.to(dev).unsqueeze(1)).abs().mean()
             opt.zero_grad()
             loss.backward()
