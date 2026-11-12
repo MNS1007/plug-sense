@@ -55,6 +55,15 @@ def save_push(folder: Path, result: dict, meta: dict, mic) -> None:
     (folder / "meta.json").write_text(json.dumps(meta, indent=2))
 
 
+def pull_out(arm, skill, offset=None) -> None:
+    """Repeat your pull-out; if the arm still thinks the plug is in, hand over to you until it is out."""
+    out = demo.run_pull(arm, skill, offset)
+    while not out:
+        arm.sync_goal()  # stop pulling while you work on it
+        said = input("  The arm thinks the plug is still in. If it is already out type o, otherwise pull it out by hand. Then press Enter. ")
+        out = demo.is_free(arm, skill, offset, told_out=True, say=True) if said.strip().lower() == "o" else demo.run_pull(arm, skill, offset)
+
+
 def cycle(arm, skill, home, folder: Path, name: str, mic, offset=None, extra: dict | None = None, ask: bool = False,
           after_push=None) -> str:
     """One full attempt: start pose, your push, save, your pull-out."""
@@ -70,11 +79,7 @@ def cycle(arm, skill, home, folder: Path, name: str, mic, offset=None, extra: di
     else:
         print(f"  {name:<16} {outcome:<7} depth {r['frac']:.2f}  {r['seconds']:.1f} s")
     save_push(folder / name, r, {"offset": None if offset is None else np.asarray(offset).tolist(), **(extra or {})}, mic)
-    out = demo.run_pull(arm, skill, offset)
-    while not out:
-        arm.sync_goal()  # stop pulling while you work on it
-        said = input("  The arm thinks the plug is still in. If it is already out type o, otherwise pull it out by hand. Then press Enter. ")
-        out = demo.is_free(arm, skill, offset, told_out=True, say=True) if said.strip().lower() == "o" else demo.run_pull(arm, skill, offset)
+    pull_out(arm, skill, offset)
     return outcome
 
 
