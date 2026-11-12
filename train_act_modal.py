@@ -2,7 +2,8 @@
 
   modal run --detach train_act_modal.py --dataset plug_act --steps 30000
   modal volume ls plug-sense act_plug_act_<run>/checkpoints    # progress: one folder per saved checkpoint
-  modal volume get plug-sense act_plug_act_<run>/checkpoints/last/pretrained_model outputs/act_plug_act
+  mkdir -p outputs/act_plug_act && modal volume get plug-sense act_plug_act_<run>/checkpoints/030000/pretrained_model outputs/act_plug_act/
+  (the local folder must exist first; use the numbered checkpoint folder, not 'last')
 
 The dataset is read from ~/.cache/huggingface/lerobot/local/<dataset> and uploaded to the
 Modal volume "plug-sense". Checkpoints are written to the same volume under act_<dataset>_<run>/,
