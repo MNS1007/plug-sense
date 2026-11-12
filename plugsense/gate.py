@@ -139,9 +139,9 @@ def main():
         try:
             arm.sync_goal()  # stop pushing or pulling
             if home is not None and input("\nReturn to the start pose first? [Y/n] ").strip().lower() != "n":
-                while skill is not None and not demo.is_free(arm, skill, told_out=True, say=True):
+                if skill is not None and not demo.is_free(arm, skill, say=True):
+                    input("The arm is still at the port. Make sure the plug is out (pull it by hand if needed), then press Enter.")
                     arm.sync_goal()
-                    input("The arm could not lift, so the plug seems to be in the port. Pull it out by hand, then press Enter.")
                 arm.goto(home, speed=200.0)
             input("HOLD THE FOLLOWER ARM with your hand, then press Enter. The motors will let go.")
         except (EOFError, KeyboardInterrupt):

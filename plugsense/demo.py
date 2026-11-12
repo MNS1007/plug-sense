@@ -166,32 +166,26 @@ def run_push(arm: Arm, skill: Skill, shift=None, hold: float = 0.4, seated_at: f
 
 
 def is_free(arm: Arm, skill: Skill, shift=None, told_out: bool = False, say: bool = False) -> bool:
-    """Is the plug out of the port? Tested with the motors relaxed, then with a gentle lift.
+    """Is the plug out of the port? Judged with the motors relaxed.
 
     A latched plug can be bent a few degrees away from the seated pose while the arm pulls on
-    it, so the pose under load proves nothing. The arm first stops pulling: if it settles back
-    near the seated pose, the plug is still in. Then it lifts 20 counts with very little force:
-    a free arm follows, a latched one does not.
+    it, so the pose under load proves nothing. The arm stops pulling twice, half a second apart:
+    a latched plug springs it back near the seated pose, a free arm stays where it is.
+    (An earlier version also tried a 20-count lift; the servos do not reliably follow so small
+    a step against gravity, so it called a free arm stuck.)
 
-    told_out: you have said the plug is out, so only the gentle lift is checked, not how far
-    the arm is from the seated pose (a plug pulled out by hand can sit just above the port).
+    told_out: you have said the plug is out, which is trusted even just above the port.
     """
     off = np.zeros(len(ARM)) if shift is None else np.asarray(shift, float)
     arm.sync_goal()
     time.sleep(0.3)
     arm.sync_goal()
-    start = arm.pos()
-    gap = float(np.abs(start - off - skill.seat)[:4].max())
-    if not told_out and gap < skill.near:
-        if say:
-            print(f"    check: arm is only {gap:.0f} counts from the seated pose (needs {skill.near:.0f})")
-        return False
-    up = -np.append(skill.line, 0.0) / np.abs(skill.line).max() * 20.0
-    arm.goto(start + up, speed=100.0, settle=0.3)
-    followed = float((arm.pos() - start) @ up / (up @ up))
+    time.sleep(0.2)
+    gap = float(np.abs(arm.pos() - off - skill.seat)[:4].max())
+    free = told_out or gap >= skill.near
     if say:
-        print(f"    check: {gap:.0f} counts from the seated pose, gentle lift followed {followed:.0%}")
-    return followed >= 0.5
+        print(f"    check: relaxed arm is {gap:.0f} counts from the seated pose (out needs {skill.near:.0f})" + (", you said it is out" if told_out else ""))
+    return free
 
 
 def run_pull(arm: Arm, skill: Skill, shift=None, tries: int = 2) -> bool:

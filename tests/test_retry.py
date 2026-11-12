@@ -10,7 +10,6 @@ from test_demo import TOP, UP, approach, steps
 def setup(monkeypatch):
     fast(monkeypatch)
     monkeypatch.setattr(demo.time, "sleep", lambda s: None)
-    monkeypatch.setattr(retry.time, "sleep", lambda s: None)
     down = steps(approach() + [SEAT] * 10)
     up = steps([SEAT] * 5 + [SEAT + (UP - SEAT) * k / 9 for k in range(10)])
     return demo.build_skill(down, up, near=45), Arm(FakeBus(TOP))
