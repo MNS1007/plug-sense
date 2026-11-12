@@ -83,6 +83,10 @@ class Arm:
         """Call after teleop: start the next move from where the arm really is."""
         self.goal = self.pos()
 
+    def relax(self) -> None:
+        """Stop pushing or pulling: tell the servos to hold where they are right now."""
+        self.write(self.pos())
+
     def goto(self, q: np.ndarray, speed: float = 500.0, settle: float = 0.15) -> None:
         """Smooth move from the last commanded pose. speed = peak counts per second on the busiest joint."""
         q = np.asarray(q, float)

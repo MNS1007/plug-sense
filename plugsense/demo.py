@@ -177,9 +177,9 @@ def is_free(arm: Arm, skill: Skill, shift=None, told_out: bool = False, say: boo
     told_out: you have said the plug is out, which is trusted even just above the port.
     """
     off = np.zeros(len(ARM)) if shift is None else np.asarray(shift, float)
-    arm.sync_goal()
+    arm.relax()
     time.sleep(0.3)
-    arm.sync_goal()
+    arm.relax()
     time.sleep(0.2)
     gap = float(np.abs(arm.pos() - off - skill.seat)[:4].max())
     free = told_out or gap >= skill.near
