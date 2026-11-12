@@ -46,7 +46,7 @@ def parse_nudges(text: str) -> list[np.ndarray]:
     return out
 
 
-def run_trial(arm, skill, home, read_share, pull, nudges, tries: int, base=None, on_push=None, lit_wait: float = 4.0) -> dict:
+def run_trial(arm, skill, home, read_share, pull, nudges, tries: int, base=None, on_push=None, lit_wait: float = 4.0, trim_looks: int = 2) -> dict:
     """One trial: up to `tries` pushes from the start pose. Returns which try lit the display (0 = none).
 
     read_share() -> share of bright pixels in the display box now.  pull(offset, was_lit) gets the plug out.
@@ -59,7 +59,10 @@ def run_trial(arm, skill, home, read_share, pull, nudges, tries: int, base=None,
         arm.goto(home, speed=300.0)
         demo.set_grip(arm, skill)
         dark = read_share()
-        r = demo.run_push(arm, skill, offset)
+        # Trim at the pose just above the port: the servos can sit several counts off their command
+        # (10 counts of base rotation, about 4 mm, was measured), so the commands alone do not put the
+        # plug where it was in your demonstration. The measured pose is brought onto the taught one.
+        r = demo.run_aligned(arm, skill, lambda: skill.hover + offset - arm.pos(), offset, looks=trim_looks, limit=25.0)
         t_push = time.monotonic()
         after = read_share()
         while after - dark < display.LIT_SHARE and time.monotonic() - t_push < lit_wait:
@@ -69,7 +72,7 @@ def run_trial(arm, skill, home, read_share, pull, nudges, tries: int, base=None,
                  lit=bool(after - dark >= display.LIT_SHARE), t_seen=time.monotonic() - t_start)
         if on_push:
             on_push(r)
-        pushes.append({key: r[key] for key in ("attempt", "offset", "lit", "frac", "share_before", "share_after")})
+        pushes.append({key: r[key] for key in ("attempt", "offset", "lit", "frac", "share_before", "share_after", "corrections")})
         if r["lit"]:
             lit_on = k + 1
             break
@@ -180,7 +183,7 @@ def main():
             def on_push(r, i=i):
                 name = f"t{i:02d}-try{r['attempt']}"
                 cv2.imwrite(str(session / f"{name}.jpg"), cam.fresh(timeout=2.0))
-                print(f"  {name}: display {'LIT ' if r['lit'] else 'dark'} (bright share {r['share_before']:.3f} -> {r['share_after']:.3f}), depth {r['frac']:.2f}")
+                print(f"  {name}: display {'LIT ' if r['lit'] else 'dark'} (bright share {r['share_before']:.3f} -> {r['share_after']:.3f}), depth {r['frac']:.2f}, trim {r['corrections']}")
                 save_push(session / name, dict(r), {"trial": i, "note": a.note}, mic)
 
             t = run_trial(arm, skill, home, read_share, pull, nudges, a.tries, base, on_push, a.lit_wait)
