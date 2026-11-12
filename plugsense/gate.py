@@ -57,11 +57,10 @@ def save_push(folder: Path, result: dict, meta: dict, mic) -> None:
 
 def pull_out(arm, skill, offset=None) -> None:
     """Repeat your pull-out; if the arm still thinks the plug is in, hand over to you until it is out."""
-    out = demo.run_pull(arm, skill, offset)
-    while not out:
+    if not demo.run_pull(arm, skill, offset):
         arm.relax()  # stop pulling while you work on it
-        said = input("  The arm thinks the plug is still in. If it is already out type o, otherwise pull it out by hand. Then press Enter. ")
-        out = demo.is_free(arm, skill, offset, told_out=True, say=True) if said.strip().lower() == "o" else demo.run_pull(arm, skill, offset)
+        input("  The arm thinks the plug is still in. Make sure it is out (pull it by hand if needed), then press Enter. ")
+        arm.sync_goal()
 
 
 def cycle(arm, skill, home, folder: Path, name: str, mic, offset=None, extra: dict | None = None, ask: bool = False,

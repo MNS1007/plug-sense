@@ -167,7 +167,7 @@ def run_push(arm: Arm, skill: Skill, shift=None, hold: float = 0.4, seated_at: f
             "t_start": t_start, "rows": rows}
 
 
-def is_free(arm: Arm, skill: Skill, shift=None, told_out: bool = False, say: bool = False) -> bool:
+def is_free(arm: Arm, skill: Skill, shift=None, told_out: bool = False, say: bool = False, far: float = 400.0) -> bool:
     """Is the plug out of the port? Tested with the motors relaxed, then with a gentle lift.
 
     A latched plug can be bent far from the seated pose while the arm pulls on it (220 counts
@@ -192,6 +192,10 @@ def is_free(arm: Arm, skill: Skill, shift=None, told_out: bool = False, say: boo
         if say:
             print(f"    check: relaxed arm is only {gap:.0f} counts from the seated pose (out needs {skill.near:.0f})")
         return False
+    if gap >= far:  # nowhere near the port: a latched plug cannot let the arm get this far once it stops pulling
+        if say:
+            print(f"    check: relaxed arm is {gap:.0f} counts from the seated pose, clear of the port")
+        return True
     up = -np.append(skill.line, 0.0) / np.abs(skill.line).max() * 20.0
     arm.goto(start + up, speed=100.0, settle=0.3)
     followed = float((arm.pos() - start) @ up / (up @ up))
@@ -200,12 +204,15 @@ def is_free(arm: Arm, skill: Skill, shift=None, told_out: bool = False, say: boo
     return followed >= 0.5
 
 
-def run_pull(arm: Arm, skill: Skill, shift=None, tries: int = 2) -> bool:
-    """Repeat your pull-out until the plug is out. Returns False if it is still in after the last try."""
-    for _ in range(tries + 1):
-        if is_free(arm, skill, shift):
-            return True
-        arm.replay(skill.pull, shift)
+def run_pull(arm: Arm, skill: Skill, shift=None) -> bool:
+    """Repeat your pull-out once. Returns False if the plug still seems to be in.
+
+    It is not repeated automatically: the replay starts at the seated pose, so repeating it
+    with the plug already out drives the plug back down at the port.
+    """
+    if is_free(arm, skill, shift):
+        return True
+    arm.replay(skill.pull, shift)
     return is_free(arm, skill, shift, say=True)
 
 
