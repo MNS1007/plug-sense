@@ -112,7 +112,7 @@ def collect_session(arm, cams, mic, session: int, skill, home, a, rng) -> dict:
     arm.goto(home, speed=a.speed)
     time.sleep(0.3)
     cams["front"].save(folder / "scene_front.jpg")
-    meta = {"spot": session, "held_out": held, "motors": ARM, "hover": skill.hover.tolist(), "seat": skill.seat.tolist(),
+    meta = {"spot": session, "held_out": held, "view": "front", "crop": a.crop, "motors": ARM, "hover": skill.hover.tolist(), "seat": skill.seat.tolist(),
             "home": home.tolist(), "samples": len(rows), "pushes": pushes, "check": check}
     (folder / "meta.json").write_text(json.dumps(meta, indent=2))
     return meta
@@ -123,6 +123,8 @@ def main():
     ap.add_argument("--mic-device", default=None)
     ap.add_argument("--front", type=int, default=0, help="front camera index")
     ap.add_argument("--wrist", type=int, default=1, help="wrist camera index")
+    ap.add_argument("--front-size", default="1920x1080", help="front camera resolution for the close-up of the port")
+    ap.add_argument("--crop", default="", help="square around the port in the front picture: centre_x,centre_y,side in pixels")
     ap.add_argument("--samples", type=int, default=60)
     ap.add_argument("--held-samples", type=int, default=20)
     ap.add_argument("--pushes", type=int, default=8)
@@ -134,8 +136,10 @@ def main():
     ap.add_argument("--seed", type=int, default=None)
     a = ap.parse_args()
     rng = np.random.default_rng(a.seed)
+    a.crop = [int(v) for v in a.crop.split(",")] if a.crop else None
+    fw, fh = (int(v) for v in a.front_size.split("x"))
 
-    cams = {"front": Camera(a.front, name="front"), "wrist": Camera(a.wrist, mjpg=True, name="wrist")}
+    cams = {"front": Camera(a.front, fw, fh, name="front"), "wrist": Camera(a.wrist, mjpg=True, name="wrist")}
     robot = SO101Follower(SO101FollowerConfig(port=FOLLOWER_PORT, id="follower", max_relative_target=10.0))
     leader = SO101Leader(SO101LeaderConfig(port=LEADER_PORT, id="leader"))
     robot.connect()

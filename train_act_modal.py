@@ -18,7 +18,7 @@ LOCAL = Path.home() / ".cache/huggingface/lerobot/local"
 image = (
     modal.Image.debian_slim(python_version="3.12")
     .apt_install("git", "ffmpeg", "libgl1", "libglib2.0-0")
-    .pip_install(f"lerobot @ git+https://github.com/huggingface/lerobot@{LEROBOT}")
+    .pip_install(f"lerobot[training] @ git+https://github.com/huggingface/lerobot@{LEROBOT}", "torch==2.11.0", "torchvision==0.26.0", "torchcodec==0.11.1")
 )
 app = modal.App("plug-sense-act", image=image)
 vol = modal.Volume.from_name("plug-sense", create_if_missing=True)

@@ -1,4 +1,7 @@
-"""Fine alignment network: wrist image -> joint offset to the hover pose.
+"""Fine alignment network: close-up of the port from the front camera -> joint offset to the hover pose.
+
+The wrist camera on this arm cannot see the plug tip or the port (the jaw is in the way),
+so the image is a square cut out of the full-resolution front camera picture around the port.
 
   python -m plugsense.fine train                 # train on data/collect, test on the held-out spots
   python -m plugsense.fine train --epochs 30
@@ -41,20 +44,31 @@ def load_spots(folder: Path) -> list[dict]:
             continue
         meta = json.loads((d / "meta.json").read_text())
         hover = np.array(meta["hover"], np.float32)
+        view, crop = meta.get("view", "wrist"), meta.get("crop")
         rows = []
         with open(d / "samples.csv") as f:
             for r in csv.DictReader(f):
-                if not r.get("wrist"):
+                if not r.get(view):
                     continue
                 cmd = np.array([float(r[f"cmd_{m}"]) for m in ARM], np.float32)
                 meas = np.array([float(r[f"meas_{m}"]) for m in ARM], np.float32)
-                rows.append({"image": str(d / r["wrist"]), "pos": meas, "target": hover - meas})  # measured to measured
+                rows.append({"image": str(d / r[view]), "crop": crop, "pos": meas, "target": hover - meas})  # measured to measured
         spots.append({"name": d.name, "spot": meta["spot"], "held_out": meta["held_out"], "hover": hover, "rows": rows})
     return spots
 
 
-def prepare(image_bgr: np.ndarray) -> np.ndarray:
-    img = cv2.resize(image_bgr, (SIZE, SIZE), interpolation=cv2.INTER_AREA)
+def cut(image_bgr: np.ndarray, crop) -> np.ndarray:
+    """crop = (centre x, centre y, side) in pixels of the full picture; None keeps the whole picture."""
+    if not crop:
+        return image_bgr
+    cx, cy, side = (int(v) for v in crop)
+    h, w = image_bgr.shape[:2]
+    x0, y0 = min(max(cx - side // 2, 0), w - side), min(max(cy - side // 2, 0), h - side)
+    return image_bgr[y0:y0 + side, x0:x0 + side]
+
+
+def prepare(image_bgr: np.ndarray, crop=None) -> np.ndarray:
+    img = cv2.resize(cut(image_bgr, crop), (SIZE, SIZE), interpolation=cv2.INTER_AREA)
     return cv2.cvtColor(img, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
 
 
@@ -80,7 +94,7 @@ class Samples(torch.utils.data.Dataset):
     def __getitem__(self, i):
         r = self.rows[i]
         if r["image"] not in self.cache:
-            self.cache[r["image"]] = prepare(cv2.imread(r["image"]))
+            self.cache[r["image"]] = prepare(cv2.imread(r["image"]), r.get("crop"))
         img = self.cache[r["image"]]
         if self.train:
             img = augment(img, self.rng)
@@ -164,7 +178,8 @@ def train(folder: Path, out_dir: Path, epochs: int, batch: int, lr: float, pretr
     report = {"train_spots": [s["spot"] for s in tr], "held_out_spots": [s["spot"] for s in te],
               "held_out": evaluate(model, test_loader, dev) if test_loader else {}}
     out_dir.mkdir(parents=True, exist_ok=True)
-    torch.save({"model": model.state_dict(), "centre": centre.tolist(), "heads": heads, "report": report}, out_dir / "fine.pt")
+    torch.save({"model": model.state_dict(), "centre": centre.tolist(), "heads": heads, "report": report,
+                "crop": tr[0]["rows"][0].get("crop") if tr[0]["rows"] else None}, out_dir / "fine.pt")
     (out_dir / "fine_report.json").write_text(json.dumps(report, indent=2))
     print(json.dumps(report["held_out"], indent=2))
     return report
@@ -184,3 +199,22 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+class Predictor:
+    """Loads a trained network and turns a camera picture into a joint offset in counts."""
+
+    def __init__(self, path: Path, crop=None):
+        ck = torch.load(path, map_location="cpu")
+        self.crop = crop if crop is not None else ck.get("crop")
+        self.dev = device()
+        self.model = FineNet(ck["heads"], pretrained=False).to(self.dev)
+        self.model.load_state_dict(ck["model"])
+        self.model.eval()
+
+    def __call__(self, image_bgr: np.ndarray):
+        """Returns (offset per joint, disagreement between heads per joint), both in counts."""
+        img = (prepare(image_bgr, self.crop) - MEAN) / STD
+        with torch.no_grad():
+            out = self.model(torch.from_numpy(img.transpose(2, 0, 1)[None].astype(np.float32)).to(self.dev)).cpu()[0]
+        return out.mean(0).numpy() * OUT_SCALE, out.std(0).numpy() * OUT_SCALE
