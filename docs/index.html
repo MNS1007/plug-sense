@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Outcome-gated plug-in</title>
-<meta name="description" content="A check on the charger's own indicator, and a one-demonstration fallback, around an unchanged ACT policy on an SO-101 arm.">
+<title>Self-correction harness for ACT</title>
+<meta name="description" content="A small harness that checks whether a USB-C plug-in latched and retries with a taught motion, tested with ACT on an SO-101 arm.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
@@ -28,14 +28,14 @@
   a { color: inherit; text-underline-offset: .18em; }
   a:focus-visible, button:focus-visible { outline: 3px solid var(--lit); outline-offset: 3px; }
 
-  header { padding: 3.5rem 0 2.25rem; }
-  .who { font-family: var(--display); font-size: .95rem; color: var(--soft); margin: 0 0 1.5rem; }
-  h1 { font-family: var(--display); font-weight: 800; font-size: clamp(2.6rem, 8vw, 5.6rem); line-height: .95; letter-spacing: -.035em; margin: 0; max-width: 11ch; }
+  header { padding: 3.5rem 0 2.5rem; }
+  header + section { margin-top: 0; }
+  h1 { font-family: var(--display); font-weight: 800; font-size: clamp(2.3rem, 6.5vw, 4.4rem); line-height: 1; letter-spacing: -.03em; margin: 0; max-width: 14ch; }
   .thesis { font-size: clamp(1.2rem, 2.4vw, 1.5rem); line-height: 1.4; max-width: 34em; margin: 1.75rem 0 0; }
 
   /* The tally: one indicator per trial, lit when the plug latched */
   .tally { background: var(--ink); color: #F2F5F9; border-radius: 1.25rem; padding: clamp(1.5rem, 4vw, 2.75rem); }
-  .tally h2 { font-family: var(--display); font-weight: 600; font-size: 1.05rem; margin: 0 0 1.75rem; color: #AEB9CB; }
+  .tally .lead { max-width: none; font-family: var(--display); font-weight: 600; font-size: 1.05rem; margin: 0 0 1.75rem; color: #AEB9CB; }
   .row + .row { margin-top: 2.25rem; }
   .row-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .25rem 1.5rem; }
   .row-name { font-family: var(--display); font-weight: 600; font-size: clamp(1.15rem, 2.6vw, 1.6rem); }
@@ -56,9 +56,10 @@
   p { max-width: 38em; margin: 0 0 1rem; }
 
   /* Videos */
-  .reel { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; }
+  .reel { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.25rem; }
   figure { margin: 0; }
-  .frame { aspect-ratio: 16 / 9; background: var(--sheet); border: 1.5px dashed var(--rule); border-radius: .75rem; overflow: hidden; display: grid; place-items: center; text-align: center; color: var(--soft); font-family: var(--display); font-size: .95rem; padding: 1rem; }
+  .seen > *, .reel > *, .pair > *, .steps > * { min-width: 0; }
+  .frame { aspect-ratio: 9 / 16; background: var(--sheet); border: 1.5px dashed var(--rule); border-radius: .75rem; overflow: hidden; display: grid; place-items: center; text-align: center; color: var(--soft); font-family: var(--display); font-size: .95rem; padding: 1rem; }
   .frame.has-video { border: 0; padding: 0; background: #000; }
   .frame iframe, .frame video { width: 100%; height: 100%; border: 0; display: block; }
   figcaption { margin-top: .7rem; }
@@ -98,7 +99,8 @@
   footer { margin-top: 5rem; padding-top: 1.5rem; border-top: 1px solid var(--rule); color: var(--soft); font-size: 1rem; }
 
   @media (max-width: 760px) {
-    .reel, .steps, .pair, .seen { grid-template-columns: 1fr; }
+    .steps, .pair, .seen { grid-template-columns: 1fr; }
+    .reel { grid-template-columns: repeat(2, 1fr); gap: 1rem; }
     .pips { grid-template-columns: repeat(10, 1fr); }
     header { padding-top: 2.25rem; }
     section { margin-top: 3.25rem; }
@@ -110,69 +112,69 @@
 <div class="page">
 
 <header>
-  <p class="who">Nithin Murugan, November 2026. SO-101 arm, USB-C plug, power bank.</p>
-  <h1>The charger is the success signal</h1>
-  <p class="thesis">An imitation policy reaches the port but cannot tell whether the plug latched. I read the charger's own indicator, gate every attempt on it, and recover with a motion taught once. The policy is not retrained.</p>
+  <h1>Self-correction harness for ACT</h1>
+  <p class="thesis">ACT often reaches a USB-C port but does not get the plug to latch, and it has no way of knowing. This harness checks the power bank's display after each attempt and, if the plug did not latch, backs out and retries with a motion taught from one demonstration. Tested on an SO-101 arm.</p>
 </header>
-
-<div class="tally" role="img" aria-label="ACT alone latched 7 of 20 trials. ACT with the gate and fallback latched 15 of 20.">
-  <h2>One indicator per trial. Lit means the plug latched and the charger turned on.</h2>
-  <div class="row">
-    <div class="row-head"><span class="row-name">ACT alone</span><span class="row-count">7<small>of 20</small></span></div>
-    <div class="pips" data-lit="7"></div>
-    <p class="row-note">About 25 s per successful plug-in. On a miss, ACT was given 90 s before the trial was counted as failed.</p>
-  </div>
-  <div class="row">
-    <div class="row-head"><span class="row-name">ACT + outcome gate + taught fallback</span><span class="row-count">15<small>of 20</small></span></div>
-    <div class="pips" data-lit="15"></div>
-    <p class="row-note">About 60 s when the fallback is needed. 5 trials failed even after retries.</p>
-  </div>
-  <p class="fine">Two separate sets of 20 trials on the same setup, counted by hand. ACT is the same checkpoint in both rows: trained on 50 teleoperated demonstrations, 20,000 steps. Indicators show the totals, not the order of the trials.</p>
-</div>
 
 <section>
   <h2>Success indicator</h2>
   <div class="seen">
     <figure class="full">
-      <img src="img/indicator.jpg" width="928" height="390" alt="Two crops of the front camera view around the power bank. Left: plug above the port, display dark. Right: plug latched, display glowing red. A white box marks the region the gate reads.">
+      <img src="img/indicator.jpg" width="928" height="390" alt="Two crops of the front camera view around the power bank. Left: plug above the port, display dark. Right: plug latched, display glowing red. A white box marks the region the harness reads.">
       <div class="halves"><span>Plug not latched: s ≈ 0.001</span><span>Plug latched: s ≈ 0.28</span></div>
-      <figcaption><b>The charger's display is the ground truth</b><span>It turns on only when the plug has latched and charging starts. The white box is the region the gate reads.</span></figcaption>
+      <figcaption><b>The power bank's display</b><span>It lights up only when the plug has latched and charging starts. The white box is the region the harness reads.</span></figcaption>
     </figure>
     <figure class="cam">
       <img src="img/front.jpg" width="900" height="720" alt="Front camera view: the arm above a power bank on a desk, plug seated, display lit." loading="lazy">
-      <figcaption><b>Front camera</b><span>Fixed, looking down at the port. Used by ACT and by the gate.</span></figcaption>
+      <figcaption><b>Front camera</b><span>Fixed, looking down at the port. Used by ACT and by the harness.</span></figcaption>
     </figure>
     <figure class="cam">
       <img src="img/wrist.jpg" width="1280" height="720" alt="Wrist camera view: close-up from the gripper, the power bank's ports below the jaw." loading="lazy">
-      <figcaption><b>Wrist camera</b><span>On the arm, just before contact. Used by ACT only.</span></figcaption>
+      <figcaption><b>Wrist camera</b><span>Mounted on the arm, shown just before contact. Used by ACT only.</span></figcaption>
     </figure>
   </div>
 </section>
 
 <section>
-  <h2>Watch it</h2>
+  <h2>Demos</h2>
   <div class="reel">
-    <figure><div class="frame" data-video="setup">Video to come: the setup</div>
-      <figcaption><b>Setup</b><span>Arm, fixed camera, taped power bank, plug fixed rigidly in the gripper.</span></figcaption></figure>
-    <figure><div class="frame" data-video="act_fail">Video to come: ACT misses</div>
-      <figcaption><b>ACT, a miss</b><span>Reaches the port, stalls on the rim, keeps pushing. Nothing tells it that it failed.</span></figcaption></figure>
-    <figure><div class="frame" data-video="act_success">Video to come: ACT succeeds</div>
-      <figcaption><b>ACT, a success</b><span>Latches on its own in about 25 s.</span></figcaption></figure>
-    <figure><div class="frame" data-video="gated">Video to come: gate and fallback</div>
-      <figcaption><b>ACT + gate + fallback</b><span>ACT misses, the display stays dark, the arm backs out and the taught motion latches the plug.</span></figcaption></figure>
+    <figure><div class="frame has-video"><video controls playsinline preload="metadata" poster="videos/setup.jpg" src="videos/setup.mp4" aria-label="Setup"></video></div>
+      <figcaption><b>Setup</b><span>The arm, the cameras and the power bank.</span></figcaption></figure>
+    <figure><div class="frame has-video"><video controls playsinline preload="metadata" poster="videos/act_fail.jpg" src="videos/act_fail.mp4" aria-label="ACT, failed attempt"></video></div>
+      <figcaption><b>ACT, failed attempt</b><span>Reaches the port but the plug does not latch.</span></figcaption></figure>
+    <figure><div class="frame has-video"><video controls playsinline preload="metadata" poster="videos/act_success.jpg" src="videos/act_success.mp4" aria-label="ACT, successful attempt"></video></div>
+      <figcaption><b>ACT, successful attempt</b><span>The plug latches on the first try.</span></figcaption></figure>
+    <figure><div class="frame has-video"><video controls playsinline preload="metadata" poster="videos/gated.jpg" src="videos/gated.mp4" aria-label="ACT with the harness"></video></div>
+      <figcaption><b>ACT with the harness</b><span>ACT misses, the display stays dark, and the taught motion plugs it in.</span></figcaption></figure>
+  </div>
+</section>
+
+<section>
+  <h2>Results</h2>
+  <div class="tally" role="img" aria-label="ACT alone latched 7 of 20 trials. ACT with the harness latched 15 of 20.">
+    <p class="lead">One indicator per trial. Lit means the plug latched.</p>
+    <div class="row">
+      <div class="row-head"><span class="row-name">ACT alone</span><span class="row-count">7<small>of 20</small></span></div>
+      <div class="pips" data-lit="7"></div>
+      <p class="row-note">34 s on average for a successful plug-in. A trial was stopped and counted as failed after 90 s.</p>
+    </div>
+    <div class="row">
+      <div class="row-head"><span class="row-name">ACT with the harness</span><span class="row-count">15<small>of 20</small></span></div>
+      <div class="pips" data-lit="15"></div>
+      <p class="row-note">About 60 s when a retry was needed. 5 trials did not latch.</p>
+    </div>
+    <p class="fine">Two sets of 20 trials on the same setup, counted by hand, with the same ACT checkpoint (50 demonstrations, 20,000 training steps). The indicators show totals, not the order of the trials.</p>
   </div>
 </section>
 
 <section>
   <h2>Measurements</h2>
   <table>
-    <caption>Hand-counted unless marked logged. Logged runs are saved by the scripts in the repository.</caption>
     <thead><tr><th>Condition</th><th class="n">Latched</th><th class="n">Time to latch</th></tr></thead>
     <tbody>
-      <tr><th>ACT alone, rigid plug mount, 50 demonstrations. A miss is called after 90 s.</th><td class="n">7 / 20</td><td class="n">≈ 25 s</td></tr>
-      <tr><th>ACT + gate + fallback, same checkpoint</th><td class="n">15 / 20</td><td class="n">≈ 60 s with recovery</td></tr>
-      <tr><th>Taught fallback alone, straight after teaching (logged)</th><td class="n">5 / 5</td><td class="n">10.7 s</td></tr>
-      <tr><th>ACT alone, loose plug mount, 70 demonstrations</th><td class="n">0 / 10</td><td class="n">none</td></tr>
+      <tr><th>ACT alone</th><td class="n">7 / 20</td><td class="n">34 s average</td></tr>
+      <tr><th>ACT with the harness</th><td class="n">15 / 20</td><td class="n">about 60 s with a retry</td></tr>
+      <tr><th>Taught motion alone, right after teaching</th><td class="n">5 / 5</td><td class="n">10.7 s</td></tr>
     </tbody>
   </table>
 </section>
@@ -181,22 +183,22 @@
   <h2>How the harness works</h2>
   <ol class="steps">
     <li>
-      <h3>Detect the outcome</h3>
-      <p>A fixed camera watches a region <i class="v">R</i> around the charger's display. The reading is the share of saturated pixels:</p>
+      <h3>Read the display</h3>
+      <p>A fixed camera watches a region <i class="v">R</i> around the display. The reading is the share of very bright pixels in it:</p>
       <div class="eq"><i>s</i> = |{ <i>x</i> ∈ <i>R</i> : max<sub>c</sub> <i>I</i><sub>c</sub>(<i>x</i>) ≥ 215 }| / |<i>R</i>|</div>
-      <p>Measured: <i class="v">s</i> ≈ 0.003 dark, ≈ 0.28 lit. Using the channel maximum makes it work for the red and the white state of the display.</p>
+      <p>Taking the maximum over colour channels covers both the red and the white state of the display.</p>
     </li>
     <li>
-      <h3>Gate the attempt</h3>
-      <p>Take <i class="v">s</i><sub>0</sub> just before the attempt, then watch for up to 4 s after it:</p>
+      <h3>Decide</h3>
+      <p>Take a reading <i class="v">s</i><sub>0</sub> just before the attempt, then watch for up to 4 s after it:</p>
       <div class="eq">latched ⇔ <i>s</i> − <i>s</i><sub>0</sub> ≥ 0.04</div>
-      <p>Subtracting <i class="v">s</i><sub>0</sub> cancels glare and room light. Accept on latched. Otherwise reject and recover.</p>
+      <p>Subtracting <i class="v">s</i><sub>0</sub> removes glare and room light. If latched, stop. If not, retry.</p>
     </li>
     <li>
-      <h3>Recover</h3>
-      <p>Back out, then replay one demonstration: the commanded joint targets at 30 Hz, with the same timing, plus the gripper squeeze.</p>
+      <h3>Retry</h3>
+      <p>The arm backs out and replays one teleoperated demonstration: the commanded joint targets at 30 Hz with the original timing, and the same gripper squeeze.</p>
       <div class="eq"><i>u</i>(<i>t</i>) = <i>q</i><sub>cmd</sub><sup>demo</sup>(<i>t</i>)</div>
-      <p>Commands are replayed, not the measured path. A position servo pushes in proportion to <i class="v">q</i><sub>cmd</sub> − <i class="v">q</i>, so the replay reproduces the forces of the demonstration at contact. Gate again, up to a fixed number of tries.</p>
+      <p>Commands are replayed instead of the measured path. A position servo pushes in proportion to <i class="v">q</i><sub>cmd</sub> − <i class="v">q</i>, so this repeats the contact forces of the demonstration. The display is checked again after each try.</p>
     </li>
   </ol>
 </section>
@@ -205,56 +207,39 @@
   <h2>Why it helps without training</h2>
   <div class="pair">
     <div>
-      <p>ACT minimises imitation error on action chunks. Success is not in its objective, and every demonstration was a success, so a stalled plug is a state it never saw and has no reason to leave.</p>
-      <p>The gate adds the missing term from outside. If the policy latches with probability <i class="v">p</i> and the fallback rescues a miss with probability <i class="v">r</i>:</p>
+      <p>ACT is trained to imitate demonstrated motion. Whether the plug latched is not part of what it learns, and all of its demonstrations were successful ones, so it has no example of what to do after a miss.</p>
+      <p>The harness adds that check from outside. If ACT latches with probability <i class="v">p</i> and a retry recovers a miss with probability <i class="v">r</i>, the overall success rate is</p>
       <div class="eq"><i>P</i> = <i>p</i> + (1 − <i>p</i>) <i>r</i></div>
-      <p>With <i class="v">p</i> = 7/20 and <i class="v">P</i> = 15/20, the implied rescue rate is <i class="v">r</i> ≈ 0.62, assuming ACT's own rate was the same in both sets of trials.</p>
+      <p>With <i class="v">p</i> = 7/20 and <i class="v">P</i> = 15/20 this gives <i class="v">r</i> ≈ 0.62, assuming ACT's own rate was the same in both sets of trials.</p>
     </div>
     <div>
-      <p>The cost is time, and only on a miss:</p>
-      <div class="eq">E[<i>T</i>] ≈ <i>T</i><sub>policy</sub> + (1 − <i>p</i>)(<i>T</i><sub>check</sub> + <i>T</i><sub>recover</sub>)</div>
-      <p>A first-try success adds only the check. A recovered trial took about a minute here, against about 25 s for ACT succeeding alone. Without the gate a miss never ends: ACT was left pushing for 90 s before a trial was called failed.</p>
+      <p>The extra time is spent only on a miss:</p>
+      <div class="eq">E[<i>T</i>] ≈ <i>T</i><sub>ACT</sub> + (1 − <i>p</i>)(<i>T</i><sub>check</sub> + <i>T</i><sub>retry</sub>)</div>
+      <p>When ACT succeeds, the harness adds only the few seconds of the check. A trial that needed a retry took about a minute, compared with 34 s for ACT succeeding alone.</p>
       <ul class="tight">
-        <li>No weights change. The same wrapper fits any policy.</li>
-        <li>No learned success classifier. The charger gives ground truth.</li>
-        <li>Every attempt is stored with its verdict, so deployment produces labelled data.</li>
+        <li>The ACT weights are not changed.</li>
+        <li>No success classifier is trained; the display is read directly.</li>
+        <li>Each attempt is saved with its outcome, which can be used as labelled data later.</li>
       </ul>
     </div>
   </div>
 </section>
 
 <section>
-  <div class="pair">
-    <div>
-      <h3 class="sub">What the first failures were</h3>
-      <p>With the plug held by one zip tie, ACT latched 0 of 10 and the replay was unreliable. The logs showed the cause: across three demonstrations of the same seated plug, the wrist ended 7° to 11° apart, so the plug was hinging in the gripper. Fixing it rigidly took the replay to 5 of 5.</p>
-    </div>
-    <div>
-      <h3 class="sub">Limits and next steps</h3>
-      <ul class="tight">
-        <li>One port location. The fallback is a replay, so it does not follow a port that has moved.</li>
-        <li>20 trials per condition, counted by hand. The next runs are logged end to end.</li>
-        <li>Next: retrain ACT on its own gate-labelled attempts, build recovery motions from logged successes, and add a contact microphone as a second latch signal.</li>
-      </ul>
-    </div>
-  </div>
+  <h2>Limitations</h2>
+  <ul class="tight">
+    <li>One fixed port location. The retry is a replay, so it does not adapt if the port moves.</li>
+    <li>20 trials per condition, counted by hand.</li>
+    <li>Not yet tried: retraining ACT on the saved attempts, or a second latch signal such as a contact microphone.</li>
+  </ul>
 </section>
 
 <footer>
-  <p>Built in two days without frontier models: teleoperation data with LeRobot, ACT trained on Modal, rollout on the arm, gate and recovery in Python. Code, checkpoints and two sample demonstrations are in <a href="https://github.com/MNS1007/plug-sense">the repository</a>.</p>
+  <p>Code, checkpoints and sample demonstrations: <a href="https://github.com/MNS1007/plug-sense">github.com/MNS1007/plug-sense</a></p>
 </footer>
 </div>
 
 <script>
-  // Paste the video links here. YouTube, Vimeo and Loom links are embedded. An .mp4 plays in place:
-  // either a full link, or a file put in this docs folder, e.g. "videos/setup.mp4".
-  const VIDEOS = {
-    setup: "",
-    act_fail: "",
-    act_success: "",
-    gated: ""
-  };
-
   for (const row of document.querySelectorAll(".pips")) {
     const lit = Number(row.dataset.lit);
     for (let i = 0; i < 20; i++) {
@@ -263,26 +248,6 @@
       pip.style.setProperty("--i", i);
       row.append(pip);
     }
-  }
-
-  function embedUrl(link) {
-    let m;
-    if ((m = link.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|shorts\/|embed\/))([\w-]{6,})/))) return "https://www.youtube.com/embed/" + m[1];
-    if ((m = link.match(/vimeo\.com\/(\d+)/))) return "https://player.vimeo.com/video/" + m[1];
-    if ((m = link.match(/loom\.com\/(?:share|embed)\/([\w-]+)/))) return "https://www.loom.com/embed/" + m[1];
-    return null;
-  }
-  for (const frame of document.querySelectorAll(".frame")) {
-    const link = VIDEOS[frame.dataset.video];
-    if (!link) continue;
-    const title = frame.parentElement.querySelector("figcaption b").textContent;
-    const src = embedUrl(link);
-    const el = document.createElement(src ? "iframe" : "video");
-    if (src) { el.src = src; el.title = title; el.allow = "fullscreen; picture-in-picture"; el.loading = "lazy"; }
-    else { el.src = link; el.controls = true; el.preload = "metadata"; el.playsInline = true; el.setAttribute("aria-label", title); }
-    frame.textContent = "";
-    frame.classList.add("has-video");
-    frame.append(el);
   }
 </script>
 </body>
