@@ -1,6 +1,7 @@
 """Self-collection at a taught location: the arm labels its own images and pushes.
 
-  python -m plugsense.collect --mic-device 1 --session 1
+  python -m plugsense.collect --mic-device 1
+  python -m plugsense.collect --mic-device 1 --samples 10 --pushes 2    # short first try
 
 You plug in and pull out once by teleop (as in plugsense.gate). The arm then works alone:
   - photographs many poses around the start of your push; each is labelled with the joint
