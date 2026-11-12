@@ -65,6 +65,13 @@
   figcaption b { font-family: var(--display); font-weight: 600; display: block; }
   figcaption span { color: var(--soft); font-size: 1rem; }
 
+  /* What the cameras see */
+  .seen { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; }
+  .seen .full { grid-column: 1 / -1; }
+  .seen img { width: 100%; height: auto; display: block; border-radius: .75rem; background: var(--sheet); }
+  .seen .cam img { aspect-ratio: 16 / 10; object-fit: cover; }
+  .halves { display: grid; grid-template-columns: 1fr 1fr; font-family: var(--display); font-size: .95rem; color: var(--soft); margin-top: .5rem; }
+
   /* Measurements */
   table { border-collapse: collapse; width: 100%; max-width: 46rem; font-size: 1.05rem; }
   caption { text-align: left; color: var(--soft); font-size: 1rem; padding-bottom: .6rem; }
@@ -91,7 +98,7 @@
   footer { margin-top: 5rem; padding-top: 1.5rem; border-top: 1px solid var(--rule); color: var(--soft); font-size: 1rem; }
 
   @media (max-width: 760px) {
-    .reel, .steps, .pair { grid-template-columns: 1fr; }
+    .reel, .steps, .pair, .seen { grid-template-columns: 1fr; }
     .pips { grid-template-columns: repeat(10, 1fr); }
     header { padding-top: 2.25rem; }
     section { margin-top: 3.25rem; }
@@ -122,6 +129,25 @@
   </div>
   <p class="fine">Two separate sets of 20 trials on the same setup, counted by hand. ACT is the same checkpoint in both rows: trained on 50 teleoperated demonstrations, 20,000 steps. Indicators show the totals, not the order of the trials.</p>
 </div>
+
+<section>
+  <h2>Success indicator</h2>
+  <div class="seen">
+    <figure class="full">
+      <img src="img/indicator.jpg" width="928" height="390" alt="Two crops of the front camera view around the power bank. Left: plug above the port, display dark. Right: plug latched, display glowing red. A white box marks the region the gate reads.">
+      <div class="halves"><span>Plug not latched: s ≈ 0.001</span><span>Plug latched: s ≈ 0.28</span></div>
+      <figcaption><b>The charger's display is the ground truth</b><span>It turns on only when the plug has latched and charging starts. The white box is the region the gate reads.</span></figcaption>
+    </figure>
+    <figure class="cam">
+      <img src="img/front.jpg" width="900" height="720" alt="Front camera view: the arm above a power bank on a desk, plug seated, display lit." loading="lazy">
+      <figcaption><b>Front camera</b><span>Fixed, looking down at the port. Used by ACT and by the gate.</span></figcaption>
+    </figure>
+    <figure class="cam">
+      <img src="img/wrist.jpg" width="1280" height="720" alt="Wrist camera view: close-up from the gripper, the power bank's ports below the jaw." loading="lazy">
+      <figcaption><b>Wrist camera</b><span>On the arm, just before contact. Used by ACT only.</span></figcaption>
+    </figure>
+  </div>
+</section>
 
 <section>
   <h2>Watch it</h2>
