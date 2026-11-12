@@ -30,3 +30,10 @@ def test_gives_up_after_the_allowed_tries(monkeypatch):
     t = retry.run_trial(arm, skill, TOP, lambda: 0.0, lambda off: arm.goto(TOP), retry.parse_nudges("0"), 2)
     assert t["lit_on"] == 0 and len(t["pushes"]) == 2
     assert "within 2 tries: 0 of 1" in retry.summary([t], 2)
+
+
+def test_report_tally():
+    from plugsense.report import tally
+    trials = [{"lit_on": 1, "seconds": 12.0, "pushes": [1]}, {"lit_on": 2, "seconds": 30.0, "pushes": [1, 2]}, {"lit_on": 0, "seconds": 50.0, "pushes": [1, 2, 3]}]
+    r = tally(trials)
+    assert (r["first_try"], r["any_try"], r["trials"], r["seconds_first"], r["seconds_any"], r["pushes"]) == (1, 2, 3, 12.0, 21.0, 6)
