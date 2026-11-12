@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Outcome-gated plug-in</title>
+<meta name="description" content="A check on the charger's own indicator, and a one-demonstration fallback, around an unchanged ACT policy on an SO-101 arm.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bench: #E9EDF1;
+    --sheet: #FBFCFD;
+    --ink: #14213D;
+    --soft: #56627A;
+    --rule: #C9D1DC;
+    --off: #C3CBD6;
+    --lit: #FF4A1C;
+    --glow: rgba(255, 74, 28, .38);
+    --display: "Bricolage Grotesque", system-ui, sans-serif;
+    --text: "STIX Two Text", Georgia, serif;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bench); color: var(--ink); -webkit-text-size-adjust: 100%; }
+  body { margin: 0; font-family: var(--text); font-size: 1.125rem; line-height: 1.55; }
+  .page { max-width: 66rem; margin: 0 auto; padding: 0 1.25rem 5rem; }
+  a { color: inherit; text-underline-offset: .18em; }
+  a:focus-visible, button:focus-visible { outline: 3px solid var(--lit); outline-offset: 3px; }
+
+  header { padding: 3.5rem 0 2.25rem; }
+  .who { font-family: var(--display); font-size: .95rem; color: var(--soft); margin: 0 0 1.5rem; }
+  h1 { font-family: var(--display); font-weight: 800; font-size: clamp(2.6rem, 8vw, 5.6rem); line-height: .95; letter-spacing: -.035em; margin: 0; max-width: 11ch; }
+  .thesis { font-size: clamp(1.2rem, 2.4vw, 1.5rem); line-height: 1.4; max-width: 34em; margin: 1.75rem 0 0; }
+
+  /* The tally: one indicator per trial, lit when the plug latched */
+  .tally { background: var(--ink); color: #F2F5F9; border-radius: 1.25rem; padding: clamp(1.5rem, 4vw, 2.75rem); }
+  .tally h2 { font-family: var(--display); font-weight: 600; font-size: 1.05rem; margin: 0 0 1.75rem; color: #AEB9CB; }
+  .row + .row { margin-top: 2.25rem; }
+  .row-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .25rem 1.5rem; }
+  .row-name { font-family: var(--display); font-weight: 600; font-size: clamp(1.15rem, 2.6vw, 1.6rem); }
+  .row-count { font-family: var(--display); font-weight: 800; font-size: clamp(1.9rem, 5vw, 3.2rem); letter-spacing: -.03em; line-height: 1; }
+  .row-count small { font-weight: 400; font-size: .42em; letter-spacing: 0; color: #AEB9CB; margin-left: .35em; }
+  .pips { display: grid; grid-template-columns: repeat(20, 1fr); gap: clamp(3px, .8vw, 9px); margin-top: .9rem; }
+  .pip { aspect-ratio: 3 / 5; border-radius: 4px; background: #2B3957; }
+  .pip.on { background: var(--lit); box-shadow: 0 0 14px var(--glow), 0 0 2px #FFD2C4 inset; }
+  @media (prefers-reduced-motion: no-preference) {
+    .pip.on { animation: light .5s both; animation-delay: calc(var(--i) * 55ms + 250ms); }
+    @keyframes light { from { background: #2B3957; box-shadow: none; } }
+  }
+  .row-note { color: #AEB9CB; font-size: 1rem; margin: .7rem 0 0; }
+  .fine { color: #AEB9CB; font-size: .95rem; margin: 2rem 0 0; max-width: 46em; }
+
+  section { margin-top: 4.5rem; }
+  section > h2 { font-family: var(--display); font-weight: 800; font-size: clamp(1.7rem, 4vw, 2.5rem); letter-spacing: -.025em; line-height: 1.05; margin: 0 0 1.5rem; max-width: 20ch; }
+  p { max-width: 38em; margin: 0 0 1rem; }
+
+  /* Videos */
+  .reel { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; }
+  figure { margin: 0; }
+  .frame { aspect-ratio: 16 / 9; background: var(--sheet); border: 1.5px dashed var(--rule); border-radius: .75rem; overflow: hidden; display: grid; place-items: center; text-align: center; color: var(--soft); font-family: var(--display); font-size: .95rem; padding: 1rem; }
+  .frame.has-video { border: 0; padding: 0; background: #000; }
+  .frame iframe, .frame video { width: 100%; height: 100%; border: 0; display: block; }
+  figcaption { margin-top: .7rem; }
+  figcaption b { font-family: var(--display); font-weight: 600; display: block; }
+  figcaption span { color: var(--soft); font-size: 1rem; }
+
+  /* Measurements */
+  table { border-collapse: collapse; width: 100%; max-width: 46rem; font-size: 1.05rem; }
+  caption { text-align: left; color: var(--soft); font-size: 1rem; padding-bottom: .6rem; }
+  th, td { text-align: left; padding: .6rem 1rem .6rem 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  thead th { font-family: var(--display); font-weight: 600; font-size: .95rem; color: var(--soft); }
+  td.n, th.n { text-align: right; padding-right: 0; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tbody th { font-weight: 400; }
+
+  /* The mechanism: a real sequence, so it is numbered */
+  .steps { list-style: none; counter-reset: s; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; }
+  .steps li { counter-increment: s; background: var(--sheet); border-radius: .75rem; padding: 1.4rem 1.4rem 1.2rem; }
+  .steps li::before { content: counter(s); font-family: var(--display); font-weight: 800; font-size: 2.2rem; line-height: 1; color: var(--lit); display: block; margin-bottom: .6rem; }
+  .steps h3 { font-family: var(--display); font-weight: 600; font-size: 1.2rem; margin: 0 0 .5rem; }
+  .steps p { font-size: 1.02rem; margin: 0 0 .7rem; }
+  .eq { font-family: var(--text); font-size: 1.12rem; background: var(--bench); border-radius: .5rem; padding: .7rem .9rem; margin: .2rem 0 .8rem; overflow-x: auto; white-space: nowrap; }
+  .eq i, p i.v { font-style: italic; }
+  .wide .eq { display: inline-block; max-width: 100%; font-size: 1.25rem; padding: .9rem 1.2rem; }
+
+  .pair { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2.5rem; }
+  ul.tight { padding-left: 1.1em; margin: 0; max-width: 34em; }
+  ul.tight li { margin-bottom: .5rem; }
+  h3.sub { font-family: var(--display); font-weight: 600; font-size: 1.2rem; margin: 0 0 .7rem; }
+
+  footer { margin-top: 5rem; padding-top: 1.5rem; border-top: 1px solid var(--rule); color: var(--soft); font-size: 1rem; }
+
+  @media (max-width: 760px) {
+    .reel, .steps, .pair { grid-template-columns: 1fr; }
+    .pips { grid-template-columns: repeat(10, 1fr); }
+    header { padding-top: 2.25rem; }
+    section { margin-top: 3.25rem; }
+    table { font-size: .98rem; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <p class="who">Nithin Murugan, November 2026. SO-101 arm, USB-C plug, power bank.</p>
+  <h1>The charger is the success signal</h1>
+  <p class="thesis">An imitation policy reaches the port but cannot tell whether the plug latched. I read the charger's own indicator, gate every attempt on it, and recover with a motion taught once. The policy is not retrained.</p>
+</header>
+
+<div class="tally" role="img" aria-label="ACT alone latched 7 of 20 trials. ACT with the gate and fallback latched 15 of 20.">
+  <h2>One indicator per trial. Lit means the plug latched and the charger turned on.</h2>
+  <div class="row">
+    <div class="row-head"><span class="row-name">ACT alone</span><span class="row-count">7<small>of 20</small></span></div>
+    <div class="pips" data-lit="7"></div>
+    <p class="row-note">About 25 s per successful plug-in. On a miss, ACT was given 90 s before the trial was counted as failed.</p>
+  </div>
+  <div class="row">
+    <div class="row-head"><span class="row-name">ACT + outcome gate + taught fallback</span><span class="row-count">15<small>of 20</small></span></div>
+    <div class="pips" data-lit="15"></div>
+    <p class="row-note">About 60 s when the fallback is needed. 5 trials failed even after retries.</p>
+  </div>
+  <p class="fine">Two separate sets of 20 trials on the same setup, counted by hand. ACT is the same checkpoint in both rows: trained on 50 teleoperated demonstrations, 20,000 steps. Indicators show the totals, not the order of the trials.</p>
+</div>
+
+<section>
+  <h2>Watch it</h2>
+  <div class="reel">
+    <figure><div class="frame" data-video="setup">Video to come: the setup</div>
+      <figcaption><b>Setup</b><span>Arm, fixed camera, taped power bank, plug fixed rigidly in the gripper.</span></figcaption></figure>
+    <figure><div class="frame" data-video="act_fail">Video to come: ACT misses</div>
+      <figcaption><b>ACT, a miss</b><span>Reaches the port, stalls on the rim, keeps pushing. Nothing tells it that it failed.</span></figcaption></figure>
+    <figure><div class="frame" data-video="act_success">Video to come: ACT succeeds</div>
+      <figcaption><b>ACT, a success</b><span>Latches on its own in about 25 s.</span></figcaption></figure>
+    <figure><div class="frame" data-video="gated">Video to come: gate and fallback</div>
+      <figcaption><b>ACT + gate + fallback</b><span>ACT misses, the display stays dark, the arm backs out and the taught motion latches the plug.</span></figcaption></figure>
+  </div>
+</section>
+
+<section>
+  <h2>Measurements</h2>
+  <table>
+    <caption>Hand-counted unless marked logged. Logged runs are saved by the scripts in the repository.</caption>
+    <thead><tr><th>Condition</th><th class="n">Latched</th><th class="n">Time to latch</th></tr></thead>
+    <tbody>
+      <tr><th>ACT alone, rigid plug mount, 50 demonstrations. A miss is called after 90 s.</th><td class="n">7 / 20</td><td class="n">≈ 25 s</td></tr>
+      <tr><th>ACT + gate + fallback, same checkpoint</th><td class="n">15 / 20</td><td class="n">≈ 60 s with recovery</td></tr>
+      <tr><th>Taught fallback alone, straight after teaching (logged)</th><td class="n">5 / 5</td><td class="n">10.7 s</td></tr>
+      <tr><th>ACT alone, loose plug mount, 70 demonstrations</th><td class="n">0 / 10</td><td class="n">none</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>How the harness works</h2>
+  <ol class="steps">
+    <li>
+      <h3>Detect the outcome</h3>
+      <p>A fixed camera watches a region <i class="v">R</i> around the charger's display. The reading is the share of saturated pixels:</p>
+      <div class="eq"><i>s</i> = |{ <i>x</i> ∈ <i>R</i> : max<sub>c</sub> <i>I</i><sub>c</sub>(<i>x</i>) ≥ 215 }| / |<i>R</i>|</div>
+      <p>Measured: <i class="v">s</i> ≈ 0.003 dark, ≈ 0.28 lit. Using the channel maximum makes it work for the red and the white state of the display.</p>
+    </li>
+    <li>
+      <h3>Gate the attempt</h3>
+      <p>Take <i class="v">s</i><sub>0</sub> just before the attempt, then watch for up to 4 s after it:</p>
+      <div class="eq">latched ⇔ <i>s</i> − <i>s</i><sub>0</sub> ≥ 0.04</div>
+      <p>Subtracting <i class="v">s</i><sub>0</sub> cancels glare and room light. Accept on latched. Otherwise reject and recover.</p>
+    </li>
+    <li>
+      <h3>Recover</h3>
+      <p>Back out, then replay one demonstration: the commanded joint targets at 30 Hz, with the same timing, plus the gripper squeeze.</p>
+      <div class="eq"><i>u</i>(<i>t</i>) = <i>q</i><sub>cmd</sub><sup>demo</sup>(<i>t</i>)</div>
+      <p>Commands are replayed, not the measured path. A position servo pushes in proportion to <i class="v">q</i><sub>cmd</sub> − <i class="v">q</i>, so the replay reproduces the forces of the demonstration at contact. Gate again, up to a fixed number of tries.</p>
+    </li>
+  </ol>
+</section>
+
+<section class="wide">
+  <h2>Why it helps without training</h2>
+  <div class="pair">
+    <div>
+      <p>ACT minimises imitation error on action chunks. Success is not in its objective, and every demonstration was a success, so a stalled plug is a state it never saw and has no reason to leave.</p>
+      <p>The gate adds the missing term from outside. If the policy latches with probability <i class="v">p</i> and the fallback rescues a miss with probability <i class="v">r</i>:</p>
+      <div class="eq"><i>P</i> = <i>p</i> + (1 − <i>p</i>) <i>r</i></div>
+      <p>With <i class="v">p</i> = 7/20 and <i class="v">P</i> = 15/20, the implied rescue rate is <i class="v">r</i> ≈ 0.62, assuming ACT's own rate was the same in both sets of trials.</p>
+    </div>
+    <div>
+      <p>The cost is time, and only on a miss:</p>
+      <div class="eq">E[<i>T</i>] ≈ <i>T</i><sub>policy</sub> + (1 − <i>p</i>)(<i>T</i><sub>check</sub> + <i>T</i><sub>recover</sub>)</div>
+      <p>A first-try success adds only the check. A recovered trial took about a minute here, against about 25 s for ACT succeeding alone. Without the gate a miss never ends: ACT was left pushing for 90 s before a trial was called failed.</p>
+      <ul class="tight">
+        <li>No weights change. The same wrapper fits any policy.</li>
+        <li>No learned success classifier. The charger gives ground truth.</li>
+        <li>Every attempt is stored with its verdict, so deployment produces labelled data.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="pair">
+    <div>
+      <h3 class="sub">What the first failures were</h3>
+      <p>With the plug held by one zip tie, ACT latched 0 of 10 and the replay was unreliable. The logs showed the cause: across three demonstrations of the same seated plug, the wrist ended 7° to 11° apart, so the plug was hinging in the gripper. Fixing it rigidly took the replay to 5 of 5.</p>
+    </div>
+    <div>
+      <h3 class="sub">Limits and next steps</h3>
+      <ul class="tight">
+        <li>One port location. The fallback is a replay, so it does not follow a port that has moved.</li>
+        <li>20 trials per condition, counted by hand. The next runs are logged end to end.</li>
+        <li>Next: retrain ACT on its own gate-labelled attempts, build recovery motions from logged successes, and add a contact microphone as a second latch signal.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <p>Built in two days without frontier models: teleoperation data with LeRobot, ACT trained on Modal, rollout on the arm, gate and recovery in Python. Code, checkpoints and two sample demonstrations are in <a href="https://github.com/MNS1007/plug-sense">the repository</a>.</p>
+</footer>
+</div>
+
+<script>
+  // Paste the video links here. YouTube, Vimeo and Loom links are embedded. An .mp4 plays in place:
+  // either a full link, or a file put in this docs folder, e.g. "videos/setup.mp4".
+  const VIDEOS = {
+    setup: "",
+    act_fail: "",
+    act_success: "",
+    gated: ""
+  };
+
+  for (const row of document.querySelectorAll(".pips")) {
+    const lit = Number(row.dataset.lit);
+    for (let i = 0; i < 20; i++) {
+      const pip = document.createElement("span");
+      pip.className = "pip" + (i < lit ? " on" : "");
+      pip.style.setProperty("--i", i);
+      row.append(pip);
+    }
+  }
+
+  function embedUrl(link) {
+    let m;
+    if ((m = link.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|shorts\/|embed\/))([\w-]{6,})/))) return "https://www.youtube.com/embed/" + m[1];
+    if ((m = link.match(/vimeo\.com\/(\d+)/))) return "https://player.vimeo.com/video/" + m[1];
+    if ((m = link.match(/loom\.com\/(?:share|embed)\/([\w-]+)/))) return "https://www.loom.com/embed/" + m[1];
+    return null;
+  }
+  for (const frame of document.querySelectorAll(".frame")) {
+    const link = VIDEOS[frame.dataset.video];
+    if (!link) continue;
+    const title = frame.parentElement.querySelector("figcaption b").textContent;
+    const src = embedUrl(link);
+    const el = document.createElement(src ? "iframe" : "video");
+    if (src) { el.src = src; el.title = title; el.allow = "fullscreen; picture-in-picture"; el.loading = "lazy"; }
+    else { el.src = link; el.controls = true; el.preload = "metadata"; el.playsInline = true; el.setAttribute("aria-label", title); }
+    frame.textContent = "";
+    frame.classList.add("has-video");
+    frame.append(el);
+  }
+</script>
+</body>
+</html>
