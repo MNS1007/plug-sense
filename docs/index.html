@@ -113,7 +113,7 @@
 
 <header>
   <h1>Self-correction harness for ACT</h1>
-  <p class="thesis">ACT often reaches a USB-C port but does not get the plug to latch, and it has no way of knowing. This harness checks the power bank's display after each attempt and, if the plug did not latch, backs out and retries with a motion taught from one demonstration. Tested on an SO-101 arm.</p>
+  <p class="thesis">A trained policy cannot be shown every edge case in advance. This is a small test of another way to handle them: check whether the task succeeded and recover when it did not, without retraining. ACT often reaches a USB-C port but does not get the plug to latch, and it has no way of knowing. The harness checks the power bank's display after each attempt and, if the plug did not latch, backs out and retries with a motion taught from one demonstration. Tested on an SO-101 arm.</p>
 </header>
 
 <section>
@@ -207,8 +207,8 @@
   <h2>Why it helps without training</h2>
   <div class="pair">
     <div>
-      <p>ACT is trained to imitate demonstrated motion. Whether the plug latched is not part of what it learns, and all of its demonstrations were successful ones, so it has no example of what to do after a miss.</p>
-      <p>The harness adds that check from outside. If ACT latches with probability <i class="v">p</i> and a retry recovers a miss with probability <i class="v">r</i>, the overall success rate is</p>
+      <p>ACT is trained to imitate demonstrated motion. Whether the plug latched is not part of what it learns, and all of its demonstrations were successful ones, so it has no example of what to do after a miss. Adding demonstrations for every way an attempt can go wrong does not scale.</p>
+      <p>The harness adds that check from outside. It looks only at the outcome, so it catches a miss whatever caused it. If ACT latches with probability <i class="v">p</i> and a retry recovers a miss with probability <i class="v">r</i>, the overall success rate is</p>
       <div class="eq"><i>P</i> = <i>p</i> + (1 − <i>p</i>) <i>r</i></div>
       <p>With <i class="v">p</i> = 7/20 and <i class="v">P</i> = 15/20 this gives <i class="v">r</i> ≈ 0.62, assuming ACT's own rate was the same in both sets of trials.</p>
     </div>
@@ -229,6 +229,7 @@
   <h2>Limitations</h2>
   <ul class="tight">
     <li>One fixed port location. The retry is a replay, so it does not adapt if the port moves.</li>
+    <li>One kind of failure was tested: the plug not latching. The check is general; the recovery is not yet.</li>
     <li>20 trials per condition, counted by hand.</li>
     <li>Not yet tried: retraining ACT on the saved attempts, or a second latch signal such as a contact microphone.</li>
   </ul>

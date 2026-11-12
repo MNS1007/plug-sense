@@ -2,6 +2,10 @@
 
 A self-correction harness for ACT on a USB-C plug-in task, tested on an SO-101 arm.
 
+A trained policy cannot be shown every edge case in advance. This is a small test of
+another way to handle them: check whether the task succeeded and recover when it did
+not, without retraining.
+
 ACT often reaches the port but does not get the plug to latch, and it has no way of
 knowing. The harness reads the power bank's display after each attempt. If the plug
 did not latch, the arm backs out and retries with a motion taught from one
