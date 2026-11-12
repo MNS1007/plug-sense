@@ -72,8 +72,8 @@ def get_home(robot, leader, arm: Arm, ask: bool = True) -> np.ndarray:
 class Skill:
     """Your seat pose, the last stretch of your push, and your pull-out."""
 
-    def __init__(self, seat, hover, push, pull, near: float = 45.0):
-        self.near = near
+    def __init__(self, seat, hover, push, pull, near: float = 45.0, hover_i: int = 0):
+        self.near, self.hover_i = near, hover_i      # hover_i: the step of push at which the arm was at hover
         self.seat, self.hover = np.asarray(seat, float), np.asarray(hover, float)
         self.push, self.pull = push, pull            # lists of (seconds, commanded goal)
         self.line = (self.seat - self.hover)[:4]     # wrist twist left out: it is not travel
@@ -89,13 +89,13 @@ class Skill:
     def save(self, path: Path) -> None:
         pack = lambda seq: [[t, q.tolist()] for t, q in seq]
         path.write_text(json.dumps({"motors": ARM, "seat": self.seat.tolist(), "hover": self.hover.tolist(),
-                                    "push": pack(self.push), "pull": pack(self.pull), "near": self.near}))
+                                    "push": pack(self.push), "pull": pack(self.pull), "near": self.near, "hover_i": self.hover_i}))
 
     @classmethod
     def load(cls, path: Path) -> "Skill":
         d = json.loads(path.read_text())
         unpack = lambda seq: [(t, np.array(q, float)) for t, q in seq]
-        return cls(d["seat"], d["hover"], unpack(d["push"]), unpack(d["pull"]), d.get("near", 45.0))
+        return cls(d["seat"], d["hover"], unpack(d["push"]), unpack(d["pull"]), d.get("near", 45.0), d.get("hover_i", 0))
 
 
 def build_skill(down: list, up: list, near: float = 45.0, lead_in: float = 60.0) -> Skill | str:
@@ -117,7 +117,7 @@ def build_skill(down: list, up: list, near: float = 45.0, lead_in: float = 60.0)
     moving = next((i for i, s in enumerate(down) if np.abs(s[1] - down[0][1]).max() > 3), 0)
     first = max(first, moving - 3, 0)  # skip the time you spent holding still before starting
     push = [(t - down[first][0], q) for t, q, _ in down[first:]]
-    skill = Skill(seat, hover, push, [], near)
+    skill = Skill(seat, hover, push, [], near, start - first)
     away = [skill.away(s[2]) for s in up]
     if not away[-1]:
         return "At the end of the pull-out the arm was still at the seated pose. Pull the plug out and move it away before pressing Enter."
@@ -201,3 +201,27 @@ def run_pull(arm: Arm, skill: Skill, shift=None, tries: int = 2) -> bool:
             return True
         arm.replay(skill.pull, shift)
     return is_free(arm, skill, shift, say=True)
+
+
+def run_aligned(arm: Arm, skill: Skill, predict, start_shift=None, looks: int = 2, limit: float = 40.0, **kw) -> dict:
+    """Your approach, then look-and-correct at the hover pose, then your push from the corrected pose.
+
+    predict() returns the joint offset (counts) that the camera says would bring the plug to
+    where it was above the port in your demonstration. start_shift is an error added on
+    purpose (unknown to the correction) to test it.
+    """
+    t_start = time.monotonic()
+    shift = np.zeros(len(ARM)) if start_shift is None else np.asarray(start_shift, float).copy()
+    arm.replay(skill.push[:skill.hover_i + 1], shift)
+    seen = []
+    for _ in range(looks):
+        time.sleep(0.25)  # let the arm and the image settle
+        step = np.clip(np.asarray(predict(), float), -limit, limit)
+        step[-1] = 0.0    # never correct the wrist twist
+        seen.append(step.round(1).tolist())
+        shift = shift + step
+        arm.goto(skill.push[skill.hover_i][1] + shift, speed=150.0, settle=0.2)
+    rest = [(t - skill.push[skill.hover_i][0], q) for t, q in skill.push[skill.hover_i:]]
+    result = run_push(arm, Skill(skill.seat, skill.hover, rest, skill.pull, skill.near), shift, **kw)
+    result.update(corrections=seen, final_shift=shift.tolist(), seconds=round(time.monotonic() - t_start, 2), t_start=t_start)
+    return result

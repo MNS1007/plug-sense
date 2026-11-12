@@ -87,3 +87,18 @@ def test_latched_plug_is_not_called_free(monkeypatch):
     arm.write(SEAT + np.array([0, -200, 0, 0, 0.0]))     # pulling hard
     assert skill.away(arm.pos())                          # bent away under load
     assert demo.is_free(arm, skill) is False              # but not free
+
+
+def test_aligned_push_removes_an_injected_offset(monkeypatch):
+    fast(monkeypatch)
+    monkeypatch.setattr(demo.time, "sleep", lambda s: None)
+    down = steps(approach() + [SEAT] * 10)
+    up = steps([SEAT] * 5 + [SEAT + (UP - SEAT) * k / 9 for k in range(10)])
+    skill = demo.build_skill(down, up, near=45)
+    assert np.allclose(down[skill.hover_i + (len(down) - len(skill.push))][2], skill.hover)
+    bus = FakeBus(TOP)
+    arm = Arm(bus)
+    injected = np.array([9, 0, -6, 0, 0.0])
+    predict = lambda: (skill.push[skill.hover_i][1] - arm.commanded())  # a perfect camera: offset back to the taught hover
+    r = demo.run_aligned(arm, skill, predict, injected)
+    assert np.abs(r["final_shift"]).max() <= 1.0 and r["corrections"][0][0] == -9.0
