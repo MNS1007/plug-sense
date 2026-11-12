@@ -37,3 +37,9 @@ def test_report_tally():
     trials = [{"lit_on": 1, "seconds": 12.0, "pushes": [1]}, {"lit_on": 2, "seconds": 30.0, "pushes": [1, 2]}, {"lit_on": 0, "seconds": 50.0, "pushes": [1, 2, 3]}]
     r = tally(trials)
     assert (r["first_try"], r["any_try"], r["trials"], r["seconds_first"], r["seconds_any"], r["pushes"]) == (1, 2, 3, 12.0, 21.0, 6)
+
+
+def test_harness_summary_counts_fallback_rescues():
+    from plugsense.harness import summary
+    trials = [{"act_lit": True, "fallback_lit": False}, {"act_lit": False, "fallback_lit": True}, {"act_lit": False, "fallback_lit": False}]
+    assert "ACT alone:                    1 of 3" in summary(trials) and "fallback: 2 of 3" in summary(trials)
