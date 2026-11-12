@@ -74,6 +74,7 @@ class Skill:
 
     def __init__(self, seat, hover, push, pull, near: float = 45.0, hover_i: int = 0):
         self.near, self.hover_i = near, hover_i      # hover_i: the step of push at which the arm was at hover
+        self.grip = None                             # gripper command you held while the plug was seated
         self.seat, self.hover = np.asarray(seat, float), np.asarray(hover, float)
         self.push, self.pull = push, pull            # lists of (seconds, commanded goal)
         self.line = (self.seat - self.hover)[:4]     # wrist twist left out: it is not travel
@@ -89,13 +90,15 @@ class Skill:
     def save(self, path: Path) -> None:
         pack = lambda seq: [[t, q.tolist()] for t, q in seq]
         path.write_text(json.dumps({"motors": ARM, "seat": self.seat.tolist(), "hover": self.hover.tolist(),
-                                    "push": pack(self.push), "pull": pack(self.pull), "near": self.near, "hover_i": self.hover_i}))
+                                    "push": pack(self.push), "pull": pack(self.pull), "near": self.near, "hover_i": self.hover_i, "grip": self.grip}))
 
     @classmethod
     def load(cls, path: Path) -> "Skill":
         d = json.loads(path.read_text())
         unpack = lambda seq: [(t, np.array(q, float)) for t, q in seq]
-        return cls(d["seat"], d["hover"], unpack(d["push"]), unpack(d["pull"]), d.get("near", 45.0), d.get("hover_i", 0))
+        skill = cls(d["seat"], d["hover"], unpack(d["push"]), unpack(d["pull"]), d.get("near", 45.0), d.get("hover_i", 0))
+        skill.grip = d.get("grip")
+        return skill
 
 
 def build_skill(down: list, up: list, near: float = 45.0, lead_in: float = 60.0) -> Skill | str:
@@ -136,12 +139,14 @@ def teach(robot, leader, arm: Arm, home: np.ndarray, near: float = 45.0, lead_in
     if not wait_for_match(robot, leader):
         return None
     down = teleop(robot, leader, arm, "\nYou have control. Come down and SEAT the plug. Press Enter while it is seated.")
+    grip = float(robot.bus.sync_read("Goal_Position", ["gripper"], normalize=False)["gripper"])  # how hard you were squeezing
     up = teleop(robot, leader, arm, "Now PULL THE PLUG OUT the way that works. Press Enter once it is out and above the port.")
     skill = build_skill(down, up, near, lead_in)
     if isinstance(skill, str):
         print(skill)
         return None
     skill.taught = {"down": down, "up": up}  # your own run, kept as the reference for a good one
+    skill.grip = grip
     print(f"plug-in: {skill.push[-1][0]:.1f} s of your motion will be repeated.  pull-out: {skill.pull[-1][0]:.1f} s.")
     print("push travel, counts per joint:", {m: int(v) for m, v in zip(ARM, skill.seat - skill.hover)})
     return skill
@@ -152,7 +157,15 @@ def save_taught(skill: Skill, path: Path) -> None:
     taught = getattr(skill, "taught", None)
     if taught:
         pack = lambda steps: [[t, cmd.tolist(), pos.tolist()] for t, cmd, pos in steps]
-        path.write_text(json.dumps({"motors": ARM, "down": pack(taught["down"]), "up": pack(taught["up"])}))
+        path.write_text(json.dumps({"motors": ARM, "grip": skill.grip, "down": pack(taught["down"]), "up": pack(taught["up"])}))
+
+
+def set_grip(arm: Arm, skill: Skill) -> None:
+    """Squeeze the gripper as you did while seating the plug. The replay moves only the five arm joints,
+    so without this the gripper stays however the leader left it and the plug can tilt in the jaws."""
+    if skill.grip is not None:
+        arm.bus.sync_write("Goal_Position", {"gripper": int(skill.grip)}, normalize=False)
+        time.sleep(0.3)
 
 
 def run_push(arm: Arm, skill: Skill, shift=None, hold: float = 0.4, seated_at: float = 0.85) -> dict:

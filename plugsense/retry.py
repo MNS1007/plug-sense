@@ -49,7 +49,7 @@ def parse_nudges(text: str) -> list[np.ndarray]:
 def run_trial(arm, skill, home, read_share, pull, nudges, tries: int, base=None, on_push=None, lit_wait: float = 4.0) -> dict:
     """One trial: up to `tries` pushes from the start pose. Returns which try lit the display (0 = none).
 
-    read_share() -> share of bright pixels in the display box now.  pull(offset) gets the plug out.
+    read_share() -> share of bright pixels in the display box now.  pull(offset, was_lit) gets the plug out.
     base: an offset added to every push on purpose, to test recovery from a misplaced start.
     """
     base = np.zeros(len(ARM)) if base is None else np.asarray(base, float)
@@ -57,6 +57,7 @@ def run_trial(arm, skill, home, read_share, pull, nudges, tries: int, base=None,
     for k in range(tries):
         offset = base + nudges[min(k, len(nudges) - 1)]
         arm.goto(home, speed=300.0)
+        demo.set_grip(arm, skill)
         dark = read_share()
         r = demo.run_push(arm, skill, offset)
         t_push = time.monotonic()
@@ -72,10 +73,10 @@ def run_trial(arm, skill, home, read_share, pull, nudges, tries: int, base=None,
         if r["lit"]:
             lit_on = k + 1
             break
-        pull(offset)
+        pull(offset, False)
     seconds = time.monotonic() - t_start
     if lit_on:
-        pull(offset)
+        pull(offset, True)
     return {"lit_on": lit_on, "seconds": round(seconds, 2), "pushes": pushes}
 
 
@@ -98,7 +99,7 @@ def main():
     from plugsense.arm import Arm
     from plugsense.attempt_log import FOLLOWER_PORT, LEADER_PORT, Mic
     from plugsense.cameras import Camera
-    from plugsense.gate import pull_out, save_push
+    from plugsense.gate import save_push
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--mic-device", default=None)
@@ -133,6 +134,10 @@ def main():
                 print(skill)
                 return
             skill.taught = {"down": unpack(raw["down"]), "up": unpack(raw["up"])}
+            skill.grip = raw.get("grip")
+            if skill.grip is None:
+                print("This demonstration was saved without the gripper squeeze. Run again without --reuse and teach once.")
+                return
             print(f"reusing your last demonstration: plug-in {skill.push[-1][0]:.1f} s, pull-out {skill.pull[-1][0]:.1f} s")
             arm.sync_goal()
         else:
@@ -150,10 +155,23 @@ def main():
         def read_share():
             return display.share(cam.fresh(timeout=2.0))
 
-        def wait_dark(limit=15.0):  # the display stays lit for up to 10 s after unplugging
+        def wait_dark(limit=15.0) -> bool:  # the display stays lit for up to 10 s after unplugging
             t0 = time.monotonic()
-            while read_share() >= display.LIT_SHARE / 2 and time.monotonic() - t0 < limit:
+            while read_share() >= display.LIT_SHARE / 2:
+                if time.monotonic() - t0 > limit:
+                    return False
                 time.sleep(0.5)
+            return True
+
+        def pull(offset, was_lit):
+            """Repeat your pull-out once. The display is the judge: after a dark push the plug never
+            latched, and after a lit one the display must go dark before the arm moves anywhere else."""
+            arm.replay(skill.pull, offset)
+            if was_lit and not wait_dark():
+                arm.relax()
+                input("  The display is still lit, so the plug seems to be in. Pull it out by hand, then press Enter. ")
+                arm.sync_goal()
+                wait_dark()
 
         for i in range(a.trials):
             arm.goto(home, speed=300.0)
@@ -165,7 +183,7 @@ def main():
                 print(f"  {name}: display {'LIT ' if r['lit'] else 'dark'} (bright share {r['share_before']:.3f} -> {r['share_after']:.3f}), depth {r['frac']:.2f}")
                 save_push(session / name, dict(r), {"trial": i, "note": a.note}, mic)
 
-            t = run_trial(arm, skill, home, read_share, lambda off: pull_out(arm, skill, off), nudges, a.tries, base, on_push, a.lit_wait)
+            t = run_trial(arm, skill, home, read_share, pull, nudges, a.tries, base, on_push, a.lit_wait)
             trials.append(t)
             print(f"trial {i + 1}/{a.trials}: " + (f"lit on try {t['lit_on']} after {t['seconds']:.1f} s" if t["lit_on"] else f"not lit in {a.tries} tries"))
             (session / "trials.json").write_text(json.dumps({"tries": a.tries, "nudges": a.nudges, "base": a.base, "note": a.note, "trials": trials}, indent=2))
@@ -176,9 +194,8 @@ def main():
         try:
             arm.sync_goal()
             if home is not None and input("\nReturn to the start pose first? [Y/n] ").strip().lower() != "n":
-                if skill is not None and not demo.is_free(arm, skill, say=True):
-                    input("The arm is still at the port. Make sure the plug is out (pull it by hand if needed), then press Enter.")
-                    arm.sync_goal()
+                input("Make sure the plug is out of the port (pull it by hand if needed), then press Enter.")
+                arm.sync_goal()
                 arm.goto(home, speed=200.0)
             input("HOLD THE FOLLOWER ARM with your hand, then press Enter. The motors will let go.")
         except (EOFError, KeyboardInterrupt):
